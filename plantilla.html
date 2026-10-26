@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Seguimiento ODK</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --ring: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --accent-wash: rgba(42,120,214,0.10);
+  --ok: #0ca30c;
+  --ok-ink: #006300;
+  --nov: #fab219;
+  --nov-ink: #8a5a00;
+  --falta: #d03b3b;
+  --track: #e8e7e1;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --ring: rgba(255,255,255,0.10);
+    --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
+    --ok-ink: #0ca30c; --nov-ink: #fab219; --track: #2c2c2a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --ring: rgba(255,255,255,0.10);
+  --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
+  --ok-ink: #0ca30c; --nov-ink: #fab219; --track: #2c2c2a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px 48px; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 18px 0 10px; }
+header h1 { font-size: 20px; margin: 0; }
+header .upd { color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+header .live { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+header .sp { flex: 1; }
+.theme { border: 1px solid var(--ring); background: var(--surface); border-radius: 8px; padding: 4px 10px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+
+nav { display: flex; gap: 2px; border-bottom: 1px solid var(--grid); overflow-x: auto; scrollbar-width: none; }
+nav button { border: 0; background: none; padding: 10px 14px; cursor: pointer; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 500; }
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 0 6px; }
+.filters select, .filters input { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 7px 9px; min-width: 0; }
+.filters .per { font-weight: 600; max-width: 340px; }
+.filters input { flex: 1 1 200px; }
+.filters .clear { border: 0; background: none; color: var(--accent); cursor: pointer; }
+
+/* avance por semana / mes */
+.periodos { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; scrollbar-width: thin; }
+.per-btn { flex: 1 0 118px; max-width: 170px; text-align: left; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.per-btn:hover { border-color: var(--muted); }
+.per-btn[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: -1px; background: var(--accent-wash); }
+.per-n { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.en-curso { font-size: 10px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .03em; }
+.per-r { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.per-p { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+.per-p.bajo { color: var(--falta); }
+.per-btn .track { height: 6px; }
+
+/* franja de avance */
+.avance { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px 16px; margin: 10px 0 16px; }
+.avance .big { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
+.avance .big small { font-size: 14px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; margin-left: 4px; }
+.avance .bar { flex: 1 1 220px; }
+.track { height: 10px; border-radius: 5px; background: var(--track); display: flex; overflow: hidden; gap: 2px; }
+.track i { display: block; height: 100%; }
+.i-ok { background: var(--ok); } .i-nov { background: var(--nov); }
+.avance .nums { display: flex; gap: 18px; font-size: 13px; color: var(--ink-2); }
+.avance .nums b { display: block; font-size: 18px; color: var(--ink); }
+
+/* cuadro principal */
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px 16px; }
+.card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card-head h2 { margin: 0; font-size: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--ring); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.seg button + button { border-left: 1px solid var(--ring); }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); font-weight: 600; }
+.btn2 { border: 1px solid var(--ring); background: var(--surface); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl { overflow-x: auto; }
+tr.persona { cursor: pointer; }
+tr.persona:hover td { background: var(--surface-2); }
+tr.persona.open td { background: var(--accent-wash); border-bottom-color: transparent; }
+.caret { display: inline-block; width: 14px; color: var(--muted); transition: transform .15s; }
+tr.open .caret { transform: rotate(90deg); }
+.sub { font-size: 12px; color: var(--muted); }
+.falta-n { color: var(--falta); font-weight: 650; }
+.cero { color: var(--ok-ink); font-weight: 650; }
+.mini { display: inline-block; width: 80px; vertical-align: middle; margin-right: 8px; }
+.mini .track { height: 6px; }
+
+.det td { background: var(--accent-wash); padding: 4px 8px 14px 30px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 700px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.cols h3 { font-size: 13px; margin: 6px 0 6px; display: flex; align-items: center; gap: 6px; }
+.cols ul { list-style: none; margin: 0; padding: 0; }
+.cols li { padding: 5px 0; border-top: 1px solid var(--grid); font-size: 13px; }
+.cols li:first-child { border-top: 0; }
+.vacio { color: var(--muted); font-size: 13px; padding: 4px 0; }
+
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tag .ic { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10px; color: #fff; flex: none; }
+.t-ok .ic { background: var(--ok); } .t-ok { color: var(--ok-ink); }
+.t-nov .ic { background: var(--nov); color: #0b0b0b; } .t-nov { color: var(--nov-ink); }
+.t-falta .ic { background: var(--falta); } .t-falta { color: var(--falta); }
+.nov-txt { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { border: 1px solid var(--ring); background: var(--surface); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); font-weight: 600; }
+.more { display: block; margin: 12px auto 0; }
+.empty { color: var(--muted); text-align: center; padding: 28px 0; }
+
+#lock { max-width: 360px; margin: 18vh auto 0; padding: 0 16px; }
+#lock h1 { font-size: 20px; margin: 0 0 6px; }
+#lock p { color: var(--ink-2); margin: 0 0 14px; }
+#lock form { display: flex; gap: 8px; }
+#lock input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; }
+#lock button { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
+#lock .err { color: var(--falta); font-size: 13px; min-height: 20px; margin-top: 8px; }
+@media (max-width: 600px) {
+  .filters select, .filters .per { flex: 1 1 45%; max-width: none; }
+  .avance .big { font-size: 26px; }
+  .hide-sm { display: none; }
+}
+@media (forced-colors: active) { .track i { border: 1px solid CanvasText; } }
+</style>
+</head>
+<body>
+<div id="lock" hidden>
+  <h1>Seguimiento ODK</h1>
+  <p>Ingresa la clave para ver el seguimiento.</p>
+  <form id="lockForm"><input id="lockPass" type="password" autocomplete="current-password" placeholder="Clave" required><button>Entrar</button></form>
+  <div class="err" id="lockErr"></div>
+</div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <h1>Seguimiento ODK</h1>
+    <span class="upd"><span class="live" aria-hidden="true"></span><span id="upd"></span></span>
+    <span class="sp"></span>
+    <button class="theme" id="themeBtn" type="button">◐ Tema</button>
+  </header>
+  <nav id="tabs" role="tablist"></nav>
+  <div class="filters" id="filters"></div>
+  <main id="main"></main>
+</div>
+
+<script>
+const CARGA = /*__CARGA__*/null;
+const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "Promociones"]];
+const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
+
+let D = null;
+const st = { tab: "ac", per: {}, acu: "", sup: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", abiertos: new Set(), limit: 100 };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => n.toLocaleString("es-EC");
+const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const fdate = iso => { if (!iso) return ""; const [y, m, d] = iso.split("-"); return `${d}/${m}`; };
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+/* ---------- acceso ---------- */
+async function descifrar(c, clave) {
+  const b = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(clave), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b(c.sal), iterations: c.it, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: b(c.iv) }, key, b(c.datos))));
+}
+
+async function iniciar() {
+  const t = store("seg-tema"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+  if (!CARGA) { document.body.innerHTML = '<p class="empty">Plantilla vacía: ejecuta build_seguimiento.py.</p>'; return; }
+  if (CARGA.plano) return arrancar(CARGA.plano);
+  const guardada = store("seg-clave");
+  if (guardada) { try { return arrancar(await descifrar(CARGA.cifrado, guardada)); } catch (e) { /* se pide de nuevo */ } }
+  $("#lock").hidden = false; $("#lockPass").focus();
+  $("#lockForm").addEventListener("submit", async ev => {
+    ev.preventDefault(); $("#lockErr").textContent = "Verificando…";
+    try { const clave = $("#lockPass").value; const d = await descifrar(CARGA.cifrado, clave); store("seg-clave", clave); $("#lock").hidden = true; arrancar(d); }
+    catch (e) { $("#lockErr").textContent = "Clave incorrecta."; }
+  });
+}
+
+function arrancar(datos) {
+  D = datos;
+  for (const [k] of FORMS) {
+    const f = D.formularios[k];
+    f.key = k;
+    f.filas.forEach(r => { r.neg = r.neg || []; r.cat = r.cat || []; r._q = norm([r.loc, r.id, r.cad, r.mer, r.sup, r.acu, ...r.neg, ...r.cat].join(" ")); });
+    st.per[k] = f.periodos[0]?.id;
+  }
+  restaurar();
+  $("#app").hidden = false;
+  $("#themeBtn").onclick = () => {
+    const actual = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const nuevo = actual === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = nuevo; store("seg-tema", nuevo);
+  };
+  render();
+  reloj(); setInterval(reloj, 30000);
+  setInterval(buscarNuevos, RECARGA_MIN * 60000);
+}
+
+/* ---------- actualización automática ---------- */
+function reloj() {
+  const min = Math.max(0, Math.round((Date.now() - new Date(D.actualizado)) / 60000));
+  const hora = new Date(D.actualizado).toLocaleTimeString("es-EC", { hour: "2-digit", minute: "2-digit" });
+  $("#upd").textContent = `Datos de las ${hora} · ${min < 1 ? "recién actualizado" : min < 60 ? `hace ${min} min` : `hace ${Math.round(min / 60)} h`}`;
+}
+
+// En GitHub Pages hay un version.json junto a la página; si cambió, se recarga
+// conservando pestaña y filtros. Abierta como archivo local no hace nada.
+async function buscarNuevos() {
+  if (location.protocol === "file:") return;
+  try {
+    const v = await (await fetch("version.json?t=" + Date.now(), { cache: "no-store" })).json();
+    if (v.actualizado && v.actualizado !== D.actualizado) { guardarEstado(); location.reload(); }
+  } catch (e) { /* sin conexión: se reintenta en el próximo ciclo */ }
+}
+function guardarEstado() {
+  try { sessionStorage.setItem("seg-estado", JSON.stringify({ ...st, abiertos: [...st.abiertos] })); } catch (e) {}
+}
+function restaurar() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem("seg-estado") || "null");
+    if (s) { Object.assign(st, s, { abiertos: new Set(s.abiertos || []) }); sessionStorage.removeItem("seg-estado"); }
+  } catch (e) {}
+  for (const [k] of FORMS) { const f = D.formularios[k]; if (!f.periodos.some(p => p.id === st.per[k])) st.per[k] = f.periodos[0]?.id; }
+}
+
+/* ---------- datos ---------- */
+// Tres estados para la vista: subió sin novedad, subió con novedad, le falta.
+const subido = r => r.e === "ok" || r.e === "nov";
+const falta = r => r.e === "pen" || r.e === "no";
+
+// Filas de un periodo con los filtros aplicados (per = semana o mes).
+function filasPeriodo(f, per = st.per[f.key]) {
+  const q = norm(st.q).trim();
+  const acu = f.key === "ac" ? st.acu : "";
+  return f.filas.filter(r => r.p === per && r.e !== "prog" && (!acu || r.acu === acu) && (!st.sup || r.sup === st.sup) &&
+    (!st.neg || r.neg.includes(st.neg)) && (!st.cat || r.cat.includes(st.cat)) && (!q || r._q.includes(q)));
+}
+
+function contar(rs) {
+  const c = { tot: rs.length, ok: 0, nov: 0, falta: 0 };
+  for (const r of rs) { if (r.e === "ok") c.ok++; else if (r.e === "nov") c.nov++; else if (falta(r)) c.falta++; }
+  c.sub = c.ok + c.nov; c.pct = c.tot ? Math.round(100 * c.sub / c.tot) : 0;
+  return c;
+}
+
+function track(c) { return `<div class="track">${c.ok ? `<i class="i-ok" style="flex:${c.ok}"></i>` : ""}${c.nov ? `<i class="i-nov" style="flex:${c.nov}"></i>` : ""}<i style="flex:${c.falta || (c.tot ? 0 : 1)}"></i></div>`; }
+
+function tag(r) {
+  if (r.e === "ok") return '<span class="tag t-ok"><span class="ic">✓</span>Subido</span>';
+  if (r.e === "nov") return '<span class="tag t-nov"><span class="ic">!</span>Subido con novedad</span>';
+  return `<span class="tag t-falta"><span class="ic">✕</span>${r.e === "no" ? "No subió" : "Falta subir"}</span>`;
+}
+
+function nombreLocal(f, r) { return `${esc(r.loc)}<div class="sub">${esc(f.key === "ac" ? r.acu : r.cad)}</div>`; }
+
+/* ---------- render ---------- */
+function render() {
+  $("#tabs").innerHTML = FORMS.map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${st.tab === k}">${t}</button>`).join("");
+  const f = D.formularios[st.tab];
+  renderFiltros(f);
+  renderMain(f);
+}
+
+function renderFiltros(f) {
+  const base = filasBase(f);
+  const uniq = (rs, k) => [...new Set(rs.flatMap(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
+  $("#filters").innerHTML = `
+    ${f.key === "ac" ? `<select data-f="acu" aria-label="Acuerdo">${opt(uniq(base, "acu"), st.acu, "Todos los acuerdos")}</select>` : ""}
+    <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
+    <select data-f="neg" aria-label="Negocio">${opt(uniq(base, "neg"), st.neg, "Todos los negocios")}</select>
+    <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>
+    <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
+    ${st.acu || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+}
+
+// Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
+function filasBase(f) { const g = { acu: st.acu, sup: st.sup, neg: st.neg, cat: st.cat, q: st.q }; st.acu = st.sup = st.neg = st.cat = st.q = ""; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+
+function renderMain(f) {
+  const rs = filasPeriodo(f);
+  const c = contar(rs);
+  const unidad = f.key === "ac" ? "acuerdos" : "locales";
+  const avance = `<section class="avance">
+    <div class="big">${c.pct}%<small>subido</small></div>
+    <div class="bar">${track(c)}<div class="sub" style="margin-top:6px"><b>${esc(f.periodos.find(p => p.id === st.per[f.key])?.label || "")}</b> · ${fmt(c.sub)} de ${fmt(c.tot)} ${unidad}</div></div>
+    <div class="nums">
+      <span><b class="falta-n">${fmt(c.falta)}</b>Faltan</span>
+      <span><b>${fmt(c.ok)}</b>Subidos</span>
+      <span><b>${fmt(c.nov)}</b>Con novedad</span>
+    </div></section>`;
+
+  const cuerpo = st.vista === "per" ? porMercaderista(f, rs) : porLocal(f, rs, c);
+  $("#main").innerHTML = franjaPeriodos(f) + avance + `<section class="card">
+    <div class="card-head">
+      <h2>¿Qué les falta subir?</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="seg" role="group"><button type="button" data-vista="per" aria-pressed="${st.vista === "per"}">Por mercaderista</button><button type="button" data-vista="loc" aria-pressed="${st.vista === "loc"}">Por local</button></div>
+        <button class="btn2" type="button" data-csv>Descargar</button>
+      </div>
+    </div>${cuerpo}</section>`;
+}
+
+// Avance de cada semana (o mes) con los filtros actuales; tocar una la abre.
+function franjaPeriodos(f) {
+  const semana = f.periodo_tipo === "semana";
+  const items = f.periodos.slice().reverse().map((p, i, arr) => {
+    const c = contar(filasPeriodo(f, p.id));
+    const actual = i === arr.length - 1;
+    const corto = semana ? "Semana " + (p.label.match(/^Semana (\d+)/) || [])[1] : p.label;
+    const rango = semana ? p.label.split("·")[1]?.trim() : "";
+    return `<button type="button" class="per-btn" data-per="${esc(p.id)}" aria-pressed="${p.id === st.per[f.key]}">
+      <span class="per-n">${esc(corto)}${actual ? ' <span class="en-curso">en curso</span>' : ""}</span>
+      <span class="per-r">${esc(rango)}</span>
+      <span class="per-p ${c.tot && c.pct < 50 && !actual ? "bajo" : ""}">${c.tot ? c.pct + "%" : "—"}</span>
+      ${track(c)}<span class="per-r">${c.tot ? `${fmt(c.falta)} faltan` : "sin datos"}</span></button>`;
+  }).join("");
+  return `<section class="periodos" aria-label="Avance por ${semana ? "semana" : "mes"}">${items}</section>`;
+}
+
+const sinPersona = n => /^sin (alcance|asignar)/i.test(n) ? 1 : 0;
+
+function porMercaderista(f, rs) {
+  const m = new Map();
+  for (const r of rs) { if (!m.has(r.mer)) m.set(r.mer, []); m.get(r.mer).push(r); }
+  const grupos = [...m].map(([mer, lista]) => ({ mer, lista, c: contar(lista), sup: lista[0].sup }))
+    // Los grupos sin persona real («Sin Alcance», «Sin asignar») van al final.
+    .sort((a, b) => sinPersona(a.mer) - sinPersona(b.mer) || b.c.falta - a.c.falta || a.c.pct - b.c.pct || a.mer.localeCompare(b.mer, "es"));
+  if (!grupos.length) return '<p class="empty">No hay nada con estos filtros.</p>';
+  const filas = grupos.map(g => {
+    const abierto = st.abiertos.has(g.mer);
+    let det = "";
+    if (abierto) {
+      const faltan = g.lista.filter(falta).sort((a, b) => a.loc.localeCompare(b.loc, "es"));
+      const subidos = g.lista.filter(subido).sort((a, b) => (b.e === "nov") - (a.e === "nov") || (b.f || "").localeCompare(a.f || ""));
+      det = `<tr class="det"><td colspan="4"><div class="cols">
+        <div><h3><span class="tag t-falta"><span class="ic">✕</span></span>Falta subir (${faltan.length})</h3>
+          ${faltan.length ? `<ul>${faltan.map(r => `<li>${nombreLocal(f, r)}</li>`).join("")}</ul>` : '<p class="vacio">Nada pendiente 🎉</p>'}</div>
+        <div><h3><span class="tag t-ok"><span class="ic">✓</span></span>Ya subió (${subidos.length})</h3>
+          ${subidos.length ? `<ul>${subidos.map(r => `<li>${nombreLocal(f, r)}<div class="sub">${fdate(r.f)}${r.e === "nov" ? ' · <span class="tag t-nov">con novedad</span>' : ""}</div>${r.e === "nov" && r.nov[0] ? `<div class="nov-txt">${esc(r.nov[0])}${r.nov.length > 1 ? ` (+${r.nov.length - 1})` : ""}</div>` : ""}</li>`).join("")}</ul>` : '<p class="vacio">Todavía no ha subido nada.</p>'}</div>
+      </div></td></tr>`;
+    }
+    return `<tr class="persona${abierto ? " open" : ""}" data-mer="${esc(g.mer)}">
+      <td><span class="caret">▸</span>${esc(g.mer)}<div class="sub" style="margin-left:14px">${esc(g.sup)}</div></td>
+      <td class="n">${g.c.falta ? `<span class="falta-n">${fmt(g.c.falta)}</span>` : '<span class="cero">0</span>'}</td>
+      <td class="n">${fmt(g.c.sub)}${g.c.nov ? `<div class="sub">${fmt(g.c.nov)} con novedad</div>` : ""}</td>
+      <td class="n hide-sm"><span class="mini">${track(g.c)}</span>${g.c.pct}%</td></tr>${det}`;
+  }).join("");
+  return `<div class="tbl"><table>
+    <thead><tr><th>Mercaderista</th><th class="n">Falta subir</th><th class="n">Ya subió</th><th class="n hide-sm">Avance</th></tr></thead>
+    <tbody>${filas}</tbody></table></div>
+    <p class="sub" style="margin:10px 0 0">Toca un nombre para ver qué le falta y qué ya subió.</p>`;
+}
+
+function porLocal(f, rs, c) {
+  const filtro = { falta, subido: r => r.e === "ok", nov: r => r.e === "nov" }[st.ver];
+  const lista = rs.filter(filtro).sort((a, b) => a.mer.localeCompare(b.mer, "es") || a.loc.localeCompare(b.loc, "es"));
+  const chip = (k, t, n) => `<button class="chip" type="button" data-ver="${k}" aria-pressed="${st.ver === k}">${t} <b>${fmt(n)}</b></button>`;
+  const filas = lista.slice(0, st.limit).map(r => `<tr>
+    <td>${nombreLocal(f, r)}</td><td>${tag(r)}${r.e === "nov" ? r.nov.map(n => `<div class="nov-txt">${esc(n)}</div>`).join("") : ""}</td>
+    <td>${esc(r.mer)}<div class="sub">${esc(r.sup)}</div></td><td class="n">${fdate(r.f) || "—"}</td></tr>`).join("");
+  return `<div class="chips">${chip("falta", "Falta subir", c.falta)}${chip("subido", "Subido", c.ok)}${chip("nov", "Con novedad", c.nov)}</div>
+    ${lista.length ? `<div class="tbl"><table><thead><tr><th>${f.key === "ac" ? "Local / acuerdo" : "Local"}</th><th>Estado</th><th>Mercaderista</th><th class="n">Fecha</th></tr></thead><tbody>${filas}</tbody></table></div>
+    ${lista.length > st.limit ? `<button class="btn2 more" type="button" data-more>Ver más (${fmt(lista.length - st.limit)} restantes)</button>` : ""}` : '<p class="empty">Nada en esta lista.</p>'}`;
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener("change", ev => {
+  const k = ev.target.dataset?.f; if (!k || k === "q") return;
+  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = ""; }
+  st.limit = 100; render();
+});
+let tq;
+document.addEventListener("input", ev => {
+  if (ev.target.dataset?.f !== "q") return;
+  clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
+});
+document.addEventListener("click", ev => {
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-vista],[data-ver],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const d = t.dataset;
+  if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
+  if (d.f === "clear") { st.acu = st.sup = st.neg = st.cat = st.q = ""; render(); return; }
+  if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
+  if ("mer" in d) { st.abiertos.has(d.mer) ? st.abiertos.delete(d.mer) : st.abiertos.add(d.mer); renderMain(D.formularios[st.tab]); return; }
+  if (d.vista) { st.vista = d.vista; renderMain(D.formularios[st.tab]); return; }
+  if (d.ver) { st.ver = d.ver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
+  if ("more" in d) { st.limit += 200; renderMain(D.formularios[st.tab]); return; }
+  if ("csv" in d) descargar(D.formularios[st.tab]);
+});
+
+function descargar(f) {
+  const rs = filasPeriodo(f).sort((a, b) => a.mer.localeCompare(b.mer, "es") || a.loc.localeCompare(b.loc, "es"));
+  const est = r => r.e === "ok" ? "Subido" : r.e === "nov" ? "Subido con novedad" : "Falta subir";
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const per = f.periodos.find(p => p.id === st.per[f.key])?.label || "";
+  const cab = ["Periodo", "Estado", "Mercaderista", "Supervisor", "Local", "Código", "Cadena", ...(f.key === "ac" ? ["Acuerdo"] : []), "Negocio", "Categoría", "Fecha", "Novedad"];
+  const lineas = [cab.map(q).join(";")].concat(rs.map(r => [per, est(r), r.mer, r.sup, r.loc, r.id, r.cad, ...(f.key === "ac" ? [r.acu] : []), r.neg.join(", "), r.cat.join(", "), fdate(r.f), r.nov.join(" | ")].map(q).join(";")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + lineas.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+  a.download = `seguimiento_${f.key}_${st.per[f.key]}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+iniciar();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# La pagina generada se publica en la rama gh-pages, no en main.
+docs/
+.env
+*.env
+__pycache__/
