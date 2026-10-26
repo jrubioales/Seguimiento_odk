@@ -55,6 +55,16 @@ header .upd { color: var(--muted); font-size: 13px; display: inline-flex; align-
 header .live { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 header .sp { flex: 1; }
 .theme { border: 1px solid var(--ring); background: var(--surface); border-radius: 8px; padding: 4px 10px; cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.theme:disabled { cursor: default; opacity: .6; }
+#actMsg { font-size: 13px; color: var(--ink-2); }
+#actMsg.err { color: var(--falta); }
+#tokDlg { border: 1px solid var(--ring); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 18px; max-width: 420px; width: calc(100% - 32px); }
+#tokDlg::backdrop { background: rgba(0,0,0,.35); }
+#tokDlg h2 { font-size: 16px; margin: 0 0 6px; }
+#tokDlg p { font-size: 13px; color: var(--ink-2); margin: 0 0 12px; }
+#tokDlg input { width: 100%; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+#tokDlg .row { display: flex; gap: 8px; justify-content: flex-end; }
+#tokDlg .ok { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600; }
 
 nav { display: flex; gap: 2px; border-bottom: 1px solid var(--grid); overflow-x: auto; scrollbar-width: none; }
 nav button { border: 0; background: none; padding: 10px 14px; cursor: pointer; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 500; }
@@ -164,8 +174,18 @@ tr.open .caret { transform: rotate(90deg); }
     <h1>Seguimiento ODK</h1>
     <span class="upd"><span class="live" aria-hidden="true"></span><span id="upd"></span></span>
     <span class="sp"></span>
+    <span id="actMsg" role="status"></span>
+    <button class="theme" id="actBtn" type="button" hidden>↻ Actualizar</button>
     <button class="theme" id="themeBtn" type="button">◐ Tema</button>
   </header>
+  <dialog id="tokDlg">
+    <form method="dialog" id="tokForm">
+      <h2>Token de GitHub</h2>
+      <p>Para pedir la actualización hace falta el token <b>cron-seguimiento</b> (permiso Actions de Seguimiento_odk). Se guarda solo en este navegador.</p>
+      <input id="tokIn" type="password" placeholder="github_pat_…" autocomplete="off" required>
+      <div class="row"><button class="btn2" value="no" formnovalidate>Cancelar</button><button class="ok" value="si">Actualizar</button></div>
+    </form>
+  </dialog>
   <nav id="tabs" role="tablist"></nav>
   <div class="filters" id="filters"></div>
   <main id="main"></main>
@@ -226,6 +246,79 @@ function arrancar(datos) {
   render();
   reloj(); setInterval(reloj, 30000);
   setInterval(buscarNuevos, RECARGA_MIN * 60000);
+  prepararActualizar();
+}
+
+/* ---------- botón Actualizar ---------- */
+// Lanza el workflow "Actualizar seguimiento" con la API de GitHub. El token se
+// guarda solo en el navegador de quien lo pega; nunca va dentro de la página.
+const GH = location.hostname.endsWith(".github.io")
+  ? { repo: `${location.hostname.split(".")[0]}/${location.pathname.split("/")[1]}`, wf: "actualizar.yml" } : null;
+
+function prepararActualizar() {
+  if (!GH) return;
+  $("#actBtn").hidden = false;
+  $("#actBtn").onclick = actualizarAhora;
+  const e = esperando();
+  if (e && e.ver !== D.actualizado) { sessionStorage.removeItem("seg-esperando"); msgAct("✓ Datos actualizados"); setTimeout(() => msgAct(""), 8000); }
+  else if (e) esperarDatos();
+}
+function esperando() { try { return JSON.parse(sessionStorage.getItem("seg-esperando") || "null"); } catch (e) { return null; } }
+
+function msgAct(txt, err) { $("#actMsg").textContent = txt; $("#actMsg").className = err ? "err" : ""; }
+
+function pedirToken() {
+  return new Promise(res => {
+    const dlg = $("#tokDlg");
+    $("#tokIn").value = "";
+    dlg.onclose = () => res(dlg.returnValue === "si" ? $("#tokIn").value.trim() : null);
+    dlg.showModal();
+  });
+}
+
+async function corridaEnCurso() {
+  try {
+    const r = await (await fetch(`https://api.github.com/repos/${GH.repo}/actions/workflows/${GH.wf}/runs?per_page=5`, { cache: "no-store" })).json();
+    return (r.workflow_runs || []).some(x => x.status === "queued" || x.status === "in_progress");
+  } catch (e) { return false; }
+}
+
+async function actualizarAhora() {
+  $("#actBtn").disabled = true;
+  try {
+    if (await corridaEnCurso()) return esperarDatos();
+    let tok = store("seg-gh-token");
+    if (!tok) { tok = await pedirToken(); if (!tok) return; }
+    msgAct("Pidiendo actualización…");
+    const r = await fetch(`https://api.github.com/repos/${GH.repo}/actions/workflows/${GH.wf}/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({ ref: "main" }),
+    });
+    if (r.status === 204) { store("seg-gh-token", tok); return esperarDatos(); }
+    if (r.status === 401 || r.status === 403 || r.status === 404) {
+      try { localStorage.removeItem("seg-gh-token"); } catch (e) {}
+      msgAct("El token no es válido o no tiene permiso de Actions.", true);
+    } else msgAct(`GitHub respondió ${r.status}. Intenta de nuevo.`, true);
+  } catch (e) { msgAct("Sin conexión con GitHub.", true); }
+  finally { if (!esperando()) $("#actBtn").disabled = false; }
+}
+
+// Revisa version.json cada 20 s; buscarNuevos recarga la página cuando cambia.
+function esperarDatos() {
+  const desde = esperando()?.desde || Date.now();
+  if (Date.now() - desde > 10 * 60000) { sessionStorage.removeItem("seg-esperando"); $("#actBtn").disabled = false; return; }
+  try { sessionStorage.setItem("seg-esperando", JSON.stringify({ desde, ver: D.actualizado })); } catch (e) {}
+  $("#actBtn").disabled = true;
+  msgAct("Actualizando… tarda unos 3 minutos");
+  const t = setInterval(() => {
+    if (Date.now() - desde > 10 * 60000) {
+      clearInterval(t); sessionStorage.removeItem("seg-esperando");
+      $("#actBtn").disabled = false; msgAct("Aún no llegan datos nuevos. Revisa Actions en GitHub.", true);
+      return;
+    }
+    buscarNuevos();
+  }, 20000);
 }
 
 /* ---------- actualización automática ---------- */
