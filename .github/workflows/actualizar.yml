@@ -2,8 +2,8 @@ name: Actualizar seguimiento
 
 on:
   schedule:
-    - cron: "*/10 11-23 * * *"
-    - cron: "*/10 0-2 * * *"
+    - cron: "7,17,27,37,47,57 11-23 * * *"
+    - cron: "7,17,27,37,47,57 0-2 * * *"
   workflow_dispatch:
   push:
     branches: [main]
