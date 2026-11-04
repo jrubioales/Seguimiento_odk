@@ -193,11 +193,11 @@ tr.open .caret { transform: rotate(90deg); }
 
 <script>
 const CARGA = /*__CARGA__*/null;
-const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "Promociones"]];
+const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "Promociones"], ["ex", "Exhibiciones ganadas"]];
 const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 
 let D = null;
-const st = { tab: "ac", per: {}, acu: "", sup: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", abiertos: new Set(), limit: 100 };
+const st = { tab: "ac", per: {}, acu: "", sup: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", dim: "cat", abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -232,10 +232,13 @@ function arrancar(datos) {
   D = datos;
   for (const [k] of FORMS) {
     const f = D.formularios[k];
+    if (!f) continue;
     f.key = k;
-    f.filas.forEach(r => { r.neg = r.neg || []; r.cat = r.cat || []; r._q = norm([r.loc, r.id, r.cad, r.mer, r.sup, r.acu, ...r.neg, ...r.cat].join(" ")); });
+    f.filas.forEach(r => { r.neg = r.neg || []; r.cat = r.cat || []; r._q = norm([r.loc, r.id, r.lid, r.cad, r.zon, r.tipo, r.mer, r.sup, r.acu, ...r.neg, ...r.cat, ...(r.skus || [])].join(" ")); });
     st.per[k] = f.periodos[0]?.id;
   }
+  // Una página generada antes de agregar un formulario no trae su pestaña.
+  for (let i = FORMS.length - 1; i >= 0; i--) if (!D.formularios[FORMS[i][0]]) FORMS.splice(i, 1);
   restaurar();
   $("#app").hidden = false;
   $("#themeBtn").onclick = () => {
@@ -355,6 +358,7 @@ const falta = r => r.e === "pen" || r.e === "no";
 
 // Filas de un periodo con los filtros aplicados (per = semana o mes).
 function filasPeriodo(f, per = st.per[f.key]) {
+  if (f.key === "ex") { const w = semanaEx(per); return exFiltro(f).filter(r => r.alta <= w.fin && (!r.baja || r.baja >= w.ini)); }
   const q = norm(st.q).trim();
   const acu = f.key === "ac" ? st.acu : "";
   return f.filas.filter(r => r.p === per && r.e !== "prog" && (!acu || r.acu === acu) && (!st.sup || r.sup === st.sup) &&
@@ -390,6 +394,8 @@ function renderFiltros(f) {
   const base = filasBase(f);
   const uniq = (rs, k) => [...new Set(rs.flatMap(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
+  // Un filtro elegido en otra pestaña que aquí no existe se suelta.
+  for (const k of f.key === "ac" ? ["acu", "sup", "neg", "cat"] : ["sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
   $("#filters").innerHTML = `
     ${f.key === "ac" ? `<select data-f="acu" aria-label="Acuerdo">${opt(uniq(base, "acu"), st.acu, "Todos los acuerdos")}</select>` : ""}
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
@@ -403,6 +409,7 @@ function renderFiltros(f) {
 function filasBase(f) { const g = { acu: st.acu, sup: st.sup, neg: st.neg, cat: st.cat, q: st.q }; st.acu = st.sup = st.neg = st.cat = st.q = ""; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
 
 function renderMain(f) {
+  if (f.key === "ex") return renderEx(f);
   const rs = filasPeriodo(f);
   const c = contar(rs);
   const unidad = f.key === "ac" ? "acuerdos" : "locales";
@@ -489,9 +496,126 @@ function porLocal(f, rs, c) {
     ${lista.length > st.limit ? `<button class="btn2 more" type="button" data-more>Ver más (${fmt(lista.length - st.limit)} restantes)</button>` : ""}` : '<p class="empty">Nada en esta lista.</p>'}`;
 }
 
+/* ---------- exhibiciones ganadas ---------- */
+// Una exhibición está activa desde su alta hasta que se registra su baja: si
+// esa semana no suben encuesta, sigue contando como activa.
+const DIA = 86400000;
+const dias = (a, b) => Math.max(0, Math.round((new Date(b) - new Date(a)) / DIA));
+const nDias = n => `${fmt(n)} ${n === 1 ? "día" : "días"}`;
+const prom = xs => xs.length ? Math.round(xs.reduce((s, x) => s + x, 0) / xs.length) : null;
+const DIMS = [["neg", "Negocio"], ["cat", "Categoría"], ["skus", "SKU"], ["zon", "Zona"], ["cad", "Cadena"], ["tipo", "Tipo de exhibición"], ["loc", "Local"], ["mer", "Mercaderista"]];
+
+// Semana lun-dom; si es la semana en curso, termina hoy.
+function semanaEx(per) {
+  const fin = new Date(new Date(per).getTime() + 6 * DIA).toISOString().slice(0, 10);
+  return { ini: per, fin: fin < D.hoy ? fin : D.hoy };
+}
+
+function exFiltro(f) {
+  const q = norm(st.q).trim();
+  return f.filas.filter(r => (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
+    (!st.cat || r.cat.includes(st.cat)) && (!q || r._q.includes(q)));
+}
+
+// rs = exhibiciones que estuvieron activas en algún momento de la semana w.
+function medirEx(rs, w) {
+  const activas = rs.filter(r => !r.baja || r.baja > w.fin);
+  const perdidas = rs.filter(r => r.baja && r.baja <= w.fin);
+  return {
+    activas, perdidas,
+    ganadas: rs.filter(r => r.alta >= w.ini),
+    locales: new Set(activas.map(r => r.lid)).size,
+    diasAct: prom(activas.map(r => dias(r.alta, w.fin))),
+  };
+}
+
+function renderEx(f) {
+  const per = st.per.ex, w = semanaEx(per);
+  const rs = filasPeriodo(f), m = medirEx(rs, w);
+  // Cuánto duran: todas las que se perdieron hasta esta semana.
+  const duraron = prom(exFiltro(f).filter(r => r.baja && r.baja <= w.fin).map(r => dias(r.alta, r.baja)));
+  const label = f.periodos.find(p => p.id === per)?.label || "";
+  const d = n => n === null ? "—" : `${fmt(n)} <span style="font-size:13px;font-weight:500">${n === 1 ? "día" : "días"}</span>`;
+  const resumen = `<section class="avance">
+    <div class="big">${fmt(m.activas.length)}<small>activas</small></div>
+    <div class="bar"><div class="sub"><b>${esc(label)}</b> · en ${fmt(m.locales)} ${m.locales === 1 ? "local" : "locales"}</div>
+      <div class="sub" style="margin-top:4px">Una exhibición sigue activa hasta que se registra su baja.</div></div>
+    <div class="nums">
+      <span><b class="cero">+${fmt(m.ganadas.length)}</b>Ganadas</span>
+      <span><b class="${m.perdidas.length ? "falta-n" : ""}">−${fmt(m.perdidas.length)}</b>Perdidas</span>
+      <span><b>${d(m.diasAct)}</b>Llevan activas</span>
+      <span><b>${d(duraron)}</b>Duran (perdidas)</span>
+    </div></section>`;
+
+  const dim = st.dim, nombreDim = DIMS.find(x => x[0] === dim)[1];
+  const grupos = new Map();
+  for (const r of rs) for (const v of [].concat(r[dim] || "Sin dato")) { if (!grupos.has(v)) grupos.set(v, []); grupos.get(v).push(r); }
+  const lista = [...grupos].map(([v, xs]) => ({ v, xs, m: medirEx(xs, w) }))
+    .sort((a, b) => b.m.activas.length - a.m.activas.length || b.m.ganadas.length - a.m.ganadas.length || String(a.v).localeCompare(String(b.v), "es"));
+  const filas = lista.map(gr => {
+    const llave = `${dim}:${gr.v}`, abierto = st.abiertos.has(llave);
+    const det = abierto ? `<tr class="det"><td colspan="5"><ul style="list-style:none;margin:0;padding:0">${gr.xs
+      .sort((a, b) => (!!a.baja && a.baja <= w.fin) - (!!b.baja && b.baja <= w.fin) || b.alta.localeCompare(a.alta))
+      .map(r => itemEx(r, w)).join("")}</ul></td></tr>` : "";
+    return `<tr class="persona${abierto ? " open" : ""}" data-grp="${esc(llave)}">
+      <td><span class="caret">▸</span>${esc(gr.v)}</td>
+      <td class="n"><b>${fmt(gr.m.activas.length)}</b></td>
+      <td class="n">${gr.m.ganadas.length ? `<span class="cero">+${fmt(gr.m.ganadas.length)}</span>` : "0"}</td>
+      <td class="n">${gr.m.perdidas.length ? `<span class="falta-n">−${fmt(gr.m.perdidas.length)}</span>` : "0"}</td>
+      <td class="n hide-sm">${gr.m.diasAct === null ? "—" : fmt(gr.m.diasAct)}</td></tr>${det}`;
+  }).join("");
+  const sel = `<select data-f="dim" aria-label="Agrupar por" style="background:var(--surface);border:1px solid var(--ring);border-radius:8px;padding:6px 9px">${DIMS.map(([k, t]) => `<option value="${k}"${k === dim ? " selected" : ""}>Por ${t.toLowerCase()}</option>`).join("")}</select>`;
+  $("#main").innerHTML = franjaEx(f) + resumen + `<section class="card">
+    <div class="card-head"><h2>Exhibiciones por ${esc(nombreDim.toLowerCase())}</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${sel}<button class="btn2" type="button" data-csv>Descargar</button></div></div>
+    ${lista.length ? `<div class="tbl"><table>
+      <thead><tr><th>${esc(nombreDim)}</th><th class="n">Activas</th><th class="n">Ganadas</th><th class="n">Perdidas</th><th class="n hide-sm">Días activas (prom.)</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>
+      <p class="sub" style="margin:10px 0 0">Ganadas y perdidas son de la semana elegida. Toca una fila para ver sus exhibiciones.${["neg", "cat", "skus"].includes(dim) ? " Una exhibición con varios productos cuenta en cada uno." : ""}</p>`
+      : '<p class="empty">No hay exhibiciones en esta semana con estos filtros.</p>'}</section>`;
+}
+
+function itemEx(r, w) {
+  const perdida = r.baja && r.baja <= w.fin;
+  const estado = perdida
+    ? `<span class="tag t-falta"><span class="ic">✕</span>Perdida el ${fdate(r.baja)}</span> · duró ${nDias(dias(r.alta, r.baja))}${r.mot ? ` · ${esc(r.mot)}` : ""}${r.com ? ` — ${esc(r.com)}` : ""}`
+    : `<span class="tag t-ok"><span class="ic">✓</span>Activa</span> · lleva ${nDias(dias(r.alta, w.fin))}`;
+  return `<li style="padding:7px 0;border-top:1px solid var(--grid)"><b>${esc(r.tipo)}</b> · ${esc(r.loc)} <span class="sub">${esc(r.zon)}</span>
+    ${r.alta >= w.ini ? ' <span class="en-curso">nueva</span>' : ""}
+    <div class="sub">${esc(r.skus.join(" + "))}</div>
+    <div class="sub">Ganada el ${fdate(r.alta)} · ${esc(r.mer)}${r.vista && !perdida ? ` · última vez vista ${fdate(r.vista)}` : ""}</div>
+    <div class="sub" style="margin-top:2px">${estado}</div></li>`;
+}
+
+function franjaEx(f) {
+  const items = f.periodos.slice().reverse().map((p, i, arr) => {
+    const w = semanaEx(p.id), m = medirEx(filasPeriodo(f, p.id), w);
+    return `<button type="button" class="per-btn" data-per="${esc(p.id)}" aria-pressed="${p.id === st.per.ex}">
+      <span class="per-n">Semana ${esc((p.label.match(/^Semana (\d+)/) || [])[1])}${i === arr.length - 1 ? ' <span class="en-curso">en curso</span>' : ""}</span>
+      <span class="per-r">${esc(p.label.split("·")[1]?.trim() || "")}</span>
+      <span class="per-p">${fmt(m.activas.length)}</span>
+      <span class="per-r">activas · <span class="cero">+${fmt(m.ganadas.length)}</span> <span class="${m.perdidas.length ? "falta-n" : ""}">−${fmt(m.perdidas.length)}</span></span></button>`;
+  }).join("");
+  return `<section class="periodos" aria-label="Exhibiciones por semana">${items}</section>`;
+}
+
+function descargarEx(f) {
+  const w = semanaEx(st.per.ex), per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const cab = ["Semana", "Estado al cierre", "Ganada en la semana", "Local", "Código", "Cadena", "Zona", "Tipo", "Negocio", "Categoría", "SKU", "Mercaderista", "Supervisor", "Fecha alta", "Fecha baja", "Días activa", "Última vez vista", "Motivo baja", "Comentario"];
+  const rs = filasPeriodo(f).sort((a, b) => a.loc.localeCompare(b.loc, "es"));
+  const lineas = [cab.map(q).join(";")].concat(rs.map(r => {
+    const perdida = r.baja && r.baja <= w.fin;
+    return [per, perdida ? "Perdida" : "Activa", r.alta >= w.ini ? "Sí" : "No", r.loc, r.lid, r.cad, r.zon, r.tipo, r.neg.join(", "), r.cat.join(", "), r.skus.join(" + "),
+      r.mer, r.sup, fdate(r.alta), perdida ? fdate(r.baja) : "", perdida ? dias(r.alta, r.baja) : dias(r.alta, w.fin), fdate(r.vista), perdida ? r.mot : "", perdida ? r.com : ""].map(q).join(";");
+  }));
+  bajar(lineas, `exhibiciones_ganadas_${st.per.ex}.csv`);
+}
+
 /* ---------- eventos ---------- */
 document.addEventListener("change", ev => {
   const k = ev.target.dataset?.f; if (!k || k === "q") return;
+  if (k === "dim") { st.dim = ev.target.value; st.abiertos.clear(); renderMain(D.formularios[st.tab]); return; }
   if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = ""; }
   st.limit = 100; render();
 });
@@ -501,8 +625,9 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-vista],[data-ver],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
   const d = t.dataset;
+  if (d.grp) { st.abiertos.has(d.grp) ? st.abiertos.delete(d.grp) : st.abiertos.add(d.grp); renderMain(D.formularios[st.tab]); return; }
   if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
   if (d.f === "clear") { st.acu = st.sup = st.neg = st.cat = st.q = ""; render(); return; }
   if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
@@ -514,15 +639,20 @@ document.addEventListener("click", ev => {
 });
 
 function descargar(f) {
+  if (f.key === "ex") return descargarEx(f);
   const rs = filasPeriodo(f).sort((a, b) => a.mer.localeCompare(b.mer, "es") || a.loc.localeCompare(b.loc, "es"));
   const est = r => r.e === "ok" ? "Subido" : r.e === "nov" ? "Subido con novedad" : "Falta subir";
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const per = f.periodos.find(p => p.id === st.per[f.key])?.label || "";
   const cab = ["Periodo", "Estado", "Mercaderista", "Supervisor", "Local", "Código", "Cadena", ...(f.key === "ac" ? ["Acuerdo"] : []), "Negocio", "Categoría", "Fecha", "Novedad"];
   const lineas = [cab.map(q).join(";")].concat(rs.map(r => [per, est(r), r.mer, r.sup, r.loc, r.id, r.cad, ...(f.key === "ac" ? [r.acu] : []), r.neg.join(", "), r.cat.join(", "), fdate(r.f), r.nov.join(" | ")].map(q).join(";")));
+  bajar(lineas, `seguimiento_${f.key}_${st.per[f.key]}.csv`);
+}
+
+function bajar(lineas, nombre) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["﻿" + lineas.join("\r\n")], { type: "text/csv;charset=utf-8" }));
-  a.download = `seguimiento_${f.key}_${st.per[f.key]}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 

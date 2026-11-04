@@ -8,6 +8,26 @@ le falta y qué subió con novedad, en tres formularios:
 | Visibilidad | `seguimiento_muebles_alquilados_uiux_v4` | `muebles_por_local_lista` (718 locales) | 1 registro por local **cada mes** |
 | Acuerdos comerciales | `acuerdos_comerciales` | `acuerdos_por_local_lista` (829 local × acuerdo) | 1 registro por local y acuerdo **cada semana ISO** (lunes a domingo) mientras el acuerdo esté vigente |
 | Promociones | `promociones_mercaderista` | `locales_promociones_lista` (920 locales) | 1 registro por local **cada semana** (lunes a domingo) |
+| Exhibiciones ganadas | `extravisibilidad_ganados_moderno` | `ganadas_moderno` (una entidad por exhibición) | No hay registros esperados: mide exhibiciones **activas, ganadas y perdidas** por semana ISO |
+
+### Exhibiciones ganadas
+
+Cada exhibición ganada en canal moderno se registra una vez (fecha de alta). En
+las visitas siguientes el mercaderista confirma si sigue o la da de baja con
+un motivo. **Si una semana no se sube encuesta, la exhibición sigue activa**:
+solo una baja la termina.
+
+Por cada semana se muestra:
+
+* **Activas**: ganadas hasta el cierre de la semana (o hasta hoy) y sin baja.
+* **Ganadas / Perdidas**: altas y bajas dentro de la semana.
+* **Llevan activas**: días promedio desde el alta de las activas.
+* **Duran (perdidas)**: días promedio entre alta y baja de las que se perdieron.
+
+Se agrupa por negocio, categoría, SKU, zona, cadena, tipo de exhibición, local
+o mercaderista. Una exhibición con varios productos cuenta en cada negocio,
+categoría o SKU que tiene. La categoría sale del catálogo de SKU del propio
+formulario.
 
 El universo sale de las mismas listas que usan los formularios, así que cuando
 se actualiza una lista en ODK la página se ajusta sola en la siguiente corrida.
@@ -97,6 +117,7 @@ En [`build_seguimiento.py`](build_seguimiento.py):
 |---|---|
 | `INICIO_VIS` | primer mes que se muestra en Visibilidad |
 | `SEMANAS_PROMO` | cuántas semanas hacia atrás muestra Promociones |
+| `SEMANAS_EX` | cuántas semanas hacia atrás muestra Exhibiciones ganadas |
 | `MOTIVOS_AC`, `MOTIVOS_VIS`, `ESTADOS_PR` | cómo se redactan los motivos de novedad |
 
 La interfaz está en [`plantilla.html`](plantilla.html). El generador reemplaza

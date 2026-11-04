@@ -9,6 +9,7 @@ Pages la sirve.
     seguimiento_muebles_alquilados_uiux_v4   muebles_por_local_lista            un registro por local cada mes
     acuerdos_comerciales                     acuerdos_por_local_lista           un registro por local y acuerdo en su vigencia
     promociones_mercaderista                 locales_promociones_lista          un registro por local cada semana (lun-dom)
+    extravisibilidad_ganados_moderno         ganadas_moderno                    exhibiciones activas, ganadas y perdidas por semana
 
 Credenciales por variables de entorno (ODK_EMAIL, ODK_PASSWORD) o con
 ``--env ruta/.env``. Si SEGUIMIENTO_CLAVE esta definida, los datos se cifran
@@ -25,6 +26,7 @@ import json
 import os
 import re
 import sys
+import time
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -42,10 +44,12 @@ TIMEOUT = 180
 FORM_VIS = "seguimiento_muebles_alquilados_uiux_v4"
 FORM_AC = "acuerdos_comerciales"
 FORM_PR = "promociones_mercaderista"
+FORM_EX = "extravisibilidad_ganados_moderno"
 
 MESES_VIS = 2                      # meses que muestra visibilidad (el actual y el anterior)
 SEMANAS_PROMO = 4                  # semanas hacia atras que muestra promociones
 SEMANAS_AC = 8                     # semanas ISO hacia atras que muestra acuerdos
+SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
 MAX_DETALLE = 6                    # novedades listadas por registro
 
 MOTIVOS_AC = {
@@ -115,6 +119,21 @@ class Odk:
             raise SystemExit(f"Login ODK fallido ({r.status_code}): {r.text[:200]}")
         self.h = {"Authorization": f"Bearer {r.json()['token']}"}
 
+    def _get(self, url: str, intentos: int = 3) -> requests.Response:
+        """GET con reintentos: el servidor a veces corta descargas largas."""
+        for i in range(intentos):
+            try:
+                r = requests.get(url, headers=self.h, timeout=TIMEOUT)
+                if r.status_code < 500:
+                    r.raise_for_status()
+                    return r
+            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+                if i == intentos - 1:
+                    raise
+            time.sleep(5 * (i + 1))
+        r.raise_for_status()
+        return r
+
     def _form(self, form: str) -> str:
         return f"{self.base}/v1/projects/{self.proyecto}/forms/{form}"
 
@@ -127,19 +146,19 @@ class Odk:
         url = f"{self._form(form)}.svc/Submissions?{'&'.join(params)}"
         filas: list[dict] = []
         for _ in range(1000):  # tope ante un nextLink circular
-            r = requests.get(url, headers=self.h, timeout=TIMEOUT)
-            r.raise_for_status()
-            cuerpo = r.json()
+            cuerpo = self._get(url).json()
             filas.extend(cuerpo.get("value", []))
             url = cuerpo.get("@odata.nextLink")
             if not url:
                 break
         return filas
 
+    def xml(self, form: str) -> str:
+        return self._get(f"{self._form(form)}.xml").content.decode("utf-8")
+
     def lista(self, form: str, nombre: str) -> list[dict]:
         """Adjunto CSV del formulario (las listas de entidades se publican asi)."""
-        r = requests.get(f"{self._form(form)}/attachments/{nombre}", headers=self.h, timeout=TIMEOUT)
-        r.raise_for_status()
+        r = self._get(f"{self._form(form)}/attachments/{nombre}")
         return list(csv.DictReader(io.StringIO(r.content.decode("utf-8-sig"))))
 
 
@@ -633,6 +652,99 @@ def armar_promociones(odk: Odk, personal: Personal, hoy: date) -> dict:
     }
 
 
+# --- exhibiciones ganadas -------------------------------------------------------
+#
+# Cada exhibicion ganada es una entidad de ganadas_moderno: se crea al ganarla
+# (fecha_alta) y en cada visita el mercaderista confirma si sigue o la da de
+# baja (fecha_baja, motivo). Si en una semana no se sube encuesta, la
+# exhibicion sigue activa: solo una baja la termina.
+
+
+def opciones_xml(xml: str, instancia: str) -> dict[str, dict[str, str]]:
+    """Items de una lista de opciones del formulario: name -> {label, ...}."""
+    import xml.etree.ElementTree as ET
+
+    raiz = ET.fromstring(xml)
+    out: dict[str, dict[str, str]] = {}
+    for inst in raiz.iter():
+        if inst.tag.endswith("}instance") and inst.get("id") == instancia:
+            for item in inst.iter():
+                if item.tag.endswith("item") or item.tag == "item":
+                    campos = {c.tag.split("}")[-1]: (c.text or "").strip() for c in item}
+                    if campos.get("name"):
+                        out[campos["name"]] = campos
+    return out
+
+
+def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
+    xml = odk.xml(FORM_EX)
+    categorias = {k: v.get("label", "").upper() for k, v in opciones_xml(xml, "categorias").items()}
+    sku_por_ean = {v.get("ean", ""): v for v in opciones_xml(xml, "skus").values()}
+    motivos = {k: v.get("label", "") for k, v in opciones_xml(xml, "motivos_baja").items()}
+
+    entidades = odk.lista(FORM_EX, "ganadas_moderno.csv")
+    registros = odk.registros(FORM_EX, expandir=True)
+    # Quien la gano: el que subio el registro que creo la entidad.
+    gano: dict[str, str] = {}
+    # Respaldo si ese registro no esta: el ultimo que levanto el local.
+    ultimo_local: dict[str, str] = {}
+    for r in sorted(registros, key=lambda r: g(r, "__system/submissionDate") or ""):
+        ultimo_local[g(r, "grp_local/local_id") or ""] = g(r, "__system/submitterName") or ""
+        for e in r.get("exhibiciones") or []:
+            if e.get("modo") == "nueva" and e.get("nuevo_id"):
+                gano[e["nuevo_id"]] = g(r, "__system/submitterName") or ""
+
+    filas = []
+    for u in entidades:
+        alta = fecha_de(u.get("fecha_alta"))
+        if not alta:
+            continue
+        baja = fecha_de(u.get("fecha_baja")) if u.get("estado") == "baja" else None
+        eans = (u.get("eans") or "").split()
+        nombres = [s.strip() for s in (u.get("skus") or "").split(" + ")]
+        skus, cats = [], []
+        for i, ean in enumerate(eans):
+            info = sku_por_ean.get(ean, {})
+            skus.append(limpio(info.get("label") or (nombres[i] if i < len(nombres) else ean)))
+            cats.append(categorias.get(info.get("categoria", ""), "SIN CATEGORÍA"))
+        submitter = gano.get(u.get("name", "")) or ultimo_local.get(u.get("local_id", ""), "")
+        merc, sup = personal.de(cedula_de(submitter), u.get("local_id", ""), u.get("zona", ""))
+        if merc == "Sin asignar" and submitter:
+            merc = titulo(submitter)
+        filas.append({
+            "id": u.get("name", ""),
+            "lid": u.get("local_id", ""),
+            "loc": limpio(u.get("local_nombre")),
+            "cad": limpio(u.get("cadena")),
+            "zon": limpio(u.get("zona")),
+            "sup": sup,
+            "mer": merc,
+            "tipo": limpio(u.get("tipo_label") or u.get("tipo")),
+            "skus": list(dict.fromkeys(skus)) or [limpio(u.get("skus"))],
+            "neg": ordenados(n.strip().upper() for n in (u.get("negocios") or "").split("+")) or [SIN_NEGOCIO],
+            "cat": ordenados(cats) or ["SIN CATEGORÍA"],
+            "alta": alta.isoformat(),
+            "baja": baja.isoformat() if baja else "",
+            "vista": (u.get("ultima_vista") or "")[:10],
+            "mot": motivos.get(u.get("motivo_baja", ""), limpio(u.get("motivo_baja"))),
+            "com": limpio(u.get("comentario_baja")),
+        })
+
+    semana_hoy = lunes(hoy)
+    primera = lunes(min((date.fromisoformat(f["alta"]) for f in filas), default=hoy))
+    semanas = [semana_hoy - timedelta(weeks=i) for i in range(SEMANAS_EX)]
+    semanas = [s for s in semanas if s >= primera]
+    return {
+        "titulo": "Exhibiciones ganadas",
+        "subtitulo": "Canal moderno · una exhibición sigue activa hasta que se registra su baja",
+        "unidad": "exhibiciones",
+        "periodos": [{"id": s.isoformat(), "label": etiqueta_semana(s)} for s in semanas],
+        "periodo_tipo": "semana",
+        "filas": filas,
+        "registros": len(registros),
+    }
+
+
 def etiqueta_semana(s: date) -> str:
     """Semana ISO: ``Semana 44 · 26 oct al 1 nov``."""
     fin = s + timedelta(days=6)
@@ -677,11 +789,12 @@ def main() -> None:
     ac = armar_acuerdos(odk, personal, hoy)
     pr = armar_promociones(odk, personal, hoy)
     vi = armar_visibilidad(odk, personal, hoy)
+    ex = armar_exhibiciones(odk, personal, hoy)
 
     datos = {
         "actualizado": ahora.isoformat(timespec="minutes"),
         "hoy": hoy.isoformat(),
-        "formularios": {"vis": vi, "ac": ac, "pr": pr},
+        "formularios": {"vis": vi, "ac": ac, "pr": pr, "ex": ex},
     }
     texto = json.dumps(datos, ensure_ascii=False, separators=(",", ":"))
     clave = os.environ.get("SEGUIMIENTO_CLAVE")
@@ -697,6 +810,10 @@ def main() -> None:
     (salida.parent / "version.json").write_text(json.dumps({"actualizado": datos["actualizado"]}), encoding="utf-8")
 
     for clave_f, f in datos["formularios"].items():
+        if clave_f == "ex":
+            activas = sum(1 for x in f["filas"] if not x["baja"])
+            print(f"{f['titulo']:<22} {f['registros']:>5} registros | {len(f['filas'])} exhibiciones, {activas} activas")
+            continue
         e = Counter(x["e"] for x in f["filas"] if x["p"] == f["periodos"][0]["id"])
         print(f"{f['titulo']:<22} {f['registros']:>5} registros | {f['periodos'][0]['label']}: {dict(e)}")
     print(f"Escrito {salida} ({salida.stat().st_size / 1e6:.1f} MB){' · cifrado' if clave else ''}")
