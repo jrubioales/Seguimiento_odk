@@ -27,7 +27,28 @@ Por cada semana se muestra:
 Se agrupa por negocio, categoría, SKU, zona, cadena, tipo de exhibición, local
 o mercaderista. Una exhibición con varios productos cuenta en cada negocio,
 categoría o SKU que tiene. La categoría sale del catálogo de SKU del propio
-formulario.
+formulario. Esta pestaña tiene además filtro por cadena.
+
+#### Fotos y PPT
+
+La vista **Fotos** muestra la foto que se tomó al ganar cada exhibición. La
+galería carga miniaturas livianas (unos 20 KB); al ampliar o descargar una foto
+se usa la original (hasta 1024 px, como la limita el formulario).
+
+**Armar PPT** genera en el navegador una presentación con el formato de
+`formato.pptx`: la portada con el logo y luego, por cadena, diapositivas de 4
+fotos con su estado (nueva, activa o perdida), local, tipo, categoría, SKU y
+fecha. Usa la semana, los filtros y la lista elegidos (activas, ganadas en la
+semana, perdidas o todas).
+
+* `plantilla_ppt.pptx` es `formato.pptx` con solo la portada (las fotos de
+  ejemplo pesaban 27 MB). Si cambias el formato, recórtalo igual y reemplázalo.
+* Las fotos se guardan en la rama **`fotos`** del repositorio (`t/` miniaturas,
+  `g/` originales). Cada corrida descarga de ODK solo las nuevas. Con
+  `SEGUIMIENTO_CLAVE` van cifradas con la misma clave de la página; si la
+  clave cambia, la rama se rehace sola en la siguiente corrida.
+* Para probar sin GitHub: `FOTOS_REMOTO` (repositorio git donde subirlas) y
+  `FOTOS_BASE` (URL desde donde las lee la página). `--sin-fotos` las omite.
 
 El universo sale de las mismas listas que usan los formularios, así que cuando
 se actualiza una lista en ODK la página se ajusta sola en la siguiente corrida.
@@ -92,7 +113,9 @@ Después se actualiza solo cada 10 minutos, de 06:00 a 21:59 (hora de Ecuador), 
 
 ### Privacidad
 
-* La página **no** contiene cédulas, RUC ni coordenadas.
+* La página **no** contiene cédulas, RUC ni coordenadas. Las fotos de
+  exhibiciones pueden mostrar la ubicación que imprime la cámara; van cifradas
+  igual que los datos.
 * Sí contiene nombres de supervisores, mercaderistas, locales y los
   comentarios de novedad. Con `SEGUIMIENTO_CLAVE` todo eso va **cifrado**
   (AES-256) dentro del HTML: sin la clave no se puede leer, aunque el

@@ -154,7 +154,27 @@ tr.open .caret { transform: rotate(90deg); }
 #lock input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; }
 #lock button { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
 #lock .err { color: var(--falta); font-size: 13px; min-height: 20px; margin-top: 8px; }
+/* fotos de exhibiciones */
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.foto { position: relative; display: flex; flex-direction: column; text-align: left; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; overflow: hidden; padding: 0; cursor: pointer; }
+.foto:hover { border-color: var(--muted); }
+.foto .img { aspect-ratio: 3 / 4; background: var(--surface-2); display: grid; place-items: center; color: var(--muted); font-size: 12px; overflow: hidden; }
+.foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto .pie { padding: 7px 9px 9px; font-size: 12px; line-height: 1.35; }
+.foto .pie b { display: block; font-size: 13px; }
+.badge { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 700; color: #fff; border-radius: 6px; padding: 2px 7px; letter-spacing: .03em; }
+.b-act { background: #1e7d3a; } .b-nue { background: var(--accent); } .b-per { background: #b88600; }
+.ppt-btn { border: 0; background: #e2211c; color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.ppt-btn:disabled { opacity: .6; cursor: default; }
+#fotoDlg { border: 0; padding: 0; background: transparent; max-width: min(96vw, 900px); width: 100%; }
+#fotoDlg::backdrop { background: rgba(0,0,0,.8); }
+#fotoDlg .caja { background: var(--surface); color: var(--ink); border-radius: 12px; overflow: hidden; }
+#fotoDlg .grande { background: #000; display: grid; place-items: center; min-height: 240px; }
+#fotoDlg .grande img { max-width: 100%; max-height: 72vh; display: block; }
+#fotoDlg .info { padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; font-size: 13px; }
+#fotoDlg .info b { font-size: 15px; }
 @media (max-width: 600px) {
+  .galeria { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .filters select, .filters .per { flex: 1 1 45%; max-width: none; }
   .avance .big { font-size: 26px; }
   .hide-sm { display: none; }
@@ -186,6 +206,11 @@ tr.open .caret { transform: rotate(90deg); }
       <div class="row"><button class="btn2" value="no" formnovalidate>Cancelar</button><button class="ok" value="si">Actualizar</button></div>
     </form>
   </dialog>
+  <dialog id="fotoDlg"><div class="caja">
+    <div class="grande"><img id="fotoImg" alt=""></div>
+    <div class="info"><div id="fotoInfo"></div>
+      <div style="display:flex;gap:8px"><button class="btn2" type="button" id="fotoBajar">Descargar foto</button><button class="btn2" type="button" id="fotoCerrar">Cerrar</button></div></div>
+  </div></dialog>
   <nav id="tabs" role="tablist"></nav>
   <div class="filters" id="filters"></div>
   <main id="main"></main>
@@ -197,7 +222,9 @@ const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "P
 const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 
 let D = null;
-const st = { tab: "ac", per: {}, acu: "", sup: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", dim: "cat", abiertos: new Set(), limit: 100 };
+let CLAVE = "";  // la de la página; también abre las fotos
+const st = { tab: "ac", per: {}, acu: "", sup: "", cad: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", dim: "cat",
+  exVista: "res", exVer: "act", abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -219,11 +246,11 @@ async function iniciar() {
   if (!CARGA) { document.body.innerHTML = '<p class="empty">Plantilla vacía: ejecuta build_seguimiento.py.</p>'; return; }
   if (CARGA.plano) return arrancar(CARGA.plano);
   const guardada = store("seg-clave");
-  if (guardada) { try { return arrancar(await descifrar(CARGA.cifrado, guardada)); } catch (e) { /* se pide de nuevo */ } }
+  if (guardada) { try { const d = await descifrar(CARGA.cifrado, guardada); CLAVE = guardada; return arrancar(d); } catch (e) { /* se pide de nuevo */ } }
   $("#lock").hidden = false; $("#lockPass").focus();
   $("#lockForm").addEventListener("submit", async ev => {
     ev.preventDefault(); $("#lockErr").textContent = "Verificando…";
-    try { const clave = $("#lockPass").value; const d = await descifrar(CARGA.cifrado, clave); store("seg-clave", clave); $("#lock").hidden = true; arrancar(d); }
+    try { const clave = $("#lockPass").value; const d = await descifrar(CARGA.cifrado, clave); store("seg-clave", clave); CLAVE = clave; $("#lock").hidden = true; arrancar(d); }
     catch (e) { $("#lockErr").textContent = "Clave incorrecta."; }
   });
 }
@@ -395,18 +422,20 @@ function renderFiltros(f) {
   const uniq = (rs, k) => [...new Set(rs.flatMap(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
   // Un filtro elegido en otra pestaña que aquí no existe se suelta.
-  for (const k of f.key === "ac" ? ["acu", "sup", "neg", "cat"] : ["sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
+  const propios = f.key === "ac" ? ["acu"] : f.key === "ex" ? ["cad"] : [];
+  for (const k of [...propios, "sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
   $("#filters").innerHTML = `
     ${f.key === "ac" ? `<select data-f="acu" aria-label="Acuerdo">${opt(uniq(base, "acu"), st.acu, "Todos los acuerdos")}</select>` : ""}
+    ${f.key === "ex" ? `<select data-f="cad" aria-label="Cadena">${opt(uniq(base, "cad"), st.cad, "Todas las cadenas")}</select>` : ""}
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
     <select data-f="neg" aria-label="Negocio">${opt(uniq(base, "neg"), st.neg, "Todos los negocios")}</select>
     <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>
     <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
-    ${st.acu || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+    ${st.acu || (f.key === "ex" && st.cad) || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
 }
 
 // Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
-function filasBase(f) { const g = { acu: st.acu, sup: st.sup, neg: st.neg, cat: st.cat, q: st.q }; st.acu = st.sup = st.neg = st.cat = st.q = ""; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+function filasBase(f) { const g = { acu: st.acu, cad: st.cad, sup: st.sup, neg: st.neg, cat: st.cat, q: st.q }; st.acu = st.cad = st.sup = st.neg = st.cat = st.q = ""; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
 
 function renderMain(f) {
   if (f.key === "ex") return renderEx(f);
@@ -513,7 +542,7 @@ function semanaEx(per) {
 
 function exFiltro(f) {
   const q = norm(st.q).trim();
-  return f.filas.filter(r => (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
+  return f.filas.filter(r => (!st.cad || r.cad === st.cad) && (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
     (!st.cat || r.cat.includes(st.cat)) && (!q || r._q.includes(q)));
 }
 
@@ -547,6 +576,9 @@ function renderEx(f) {
       <span><b>${d(duraron)}</b>Duran (perdidas)</span>
     </div></section>`;
 
+  const vistas = `<div class="seg" role="group" style="margin-bottom:12px"><button type="button" data-exvista="res" aria-pressed="${st.exVista === "res"}">Resumen</button><button type="button" data-exvista="fotos" aria-pressed="${st.exVista === "fotos"}">Fotos</button></div>`;
+  if (st.exVista === "fotos") { $("#main").innerHTML = franjaEx(f) + resumen + vistas + renderFotos(f, rs, m, w); cargarMiniaturas(); return; }
+
   const dim = st.dim, nombreDim = DIMS.find(x => x[0] === dim)[1];
   const grupos = new Map();
   for (const r of rs) for (const v of [].concat(r[dim] || "Sin dato")) { if (!grupos.has(v)) grupos.set(v, []); grupos.get(v).push(r); }
@@ -565,7 +597,7 @@ function renderEx(f) {
       <td class="n hide-sm">${gr.m.diasAct === null ? "—" : fmt(gr.m.diasAct)}</td></tr>${det}`;
   }).join("");
   const sel = `<select data-f="dim" aria-label="Agrupar por" style="background:var(--surface);border:1px solid var(--ring);border-radius:8px;padding:6px 9px">${DIMS.map(([k, t]) => `<option value="${k}"${k === dim ? " selected" : ""}>Por ${t.toLowerCase()}</option>`).join("")}</select>`;
-  $("#main").innerHTML = franjaEx(f) + resumen + `<section class="card">
+  $("#main").innerHTML = franjaEx(f) + resumen + vistas + `<section class="card">
     <div class="card-head"><h2>Exhibiciones por ${esc(nombreDim.toLowerCase())}</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${sel}<button class="btn2" type="button" data-csv>Descargar</button></div></div>
     ${lista.length ? `<div class="tbl"><table>
@@ -599,6 +631,268 @@ function franjaEx(f) {
   return `<section class="periodos" aria-label="Exhibiciones por semana">${items}</section>`;
 }
 
+/* ---------- fotos de exhibiciones ---------- */
+// Las fotos viven en la rama «fotos» del repositorio: t/ = miniatura liviana,
+// g/ = la foto original. Con clave van cifradas (12 bytes de IV + AES-GCM).
+const VER_EX = [["act", "Activas"], ["nue", "Ganadas en la semana"], ["per", "Perdidas"], ["todas", "Todas"]];
+const perdidaEn = (r, w) => !!r.baja && r.baja <= w.fin;
+
+function fotosDe(rs, w, ver = st.exVer) {
+  const filtro = { act: r => !perdidaEn(r, w), nue: r => r.alta >= w.ini, per: r => perdidaEn(r, w), todas: () => true }[ver];
+  return rs.filter(filtro).sort((a, b) => a.cad.localeCompare(b.cad, "es") || a.zon.localeCompare(b.zon, "es") ||
+    a.loc.localeCompare(b.loc, "es") || a.alta.localeCompare(b.alta));
+}
+
+function badgeEx(r, w) {
+  if (perdidaEn(r, w)) return ["PERDIDA", "b-per", "B88600"];
+  if (r.alta >= w.ini) return ["NUEVA", "b-nue", "2A78D6"];
+  return ["ACTIVA", "b-act", "1E7D3A"];
+}
+
+function renderFotos(f, rs, m, w) {
+  const lista = fotosDe(rs, w);
+  const n = { act: rs.length - m.perdidas.length, nue: m.ganadas.length, per: m.perdidas.length, todas: rs.length };
+  const chips = VER_EX.map(([k, t]) => `<button class="chip" type="button" data-exver="${k}" aria-pressed="${st.exVer === k}">${t} <b>${fmt(n[k])}</b></button>`).join("");
+  const sinFotos = !D.formularios.ex.fotos?.base;
+  const tarjetas = lista.slice(0, st.limit).map(r => {
+    const [txt, cls] = badgeEx(r, w);
+    return `<button class="foto" type="button" data-foto="${esc(r.id)}">
+      <div class="img">${r.foto ? `<img data-t="${esc(r.id)}" alt="${esc(r.tipo + " · " + r.loc)}">` : "Sin foto"}</div>
+      <span class="badge ${cls}">${txt}</span>
+      <div class="pie"><b>${esc(r.loc)}</b>${esc(r.tipo)} · ${esc(r.cat.join(", "))}
+        <div class="sub">${esc(r.cad)} · ${esc(r.zon)}</div>
+        <div class="sub">Ganada ${fdate(r.alta)} · ${perdidaEn(r, w) ? `duró ${nDias(dias(r.alta, r.baja))}` : `lleva ${nDias(dias(r.alta, w.fin))}`}</div></div></button>`;
+  }).join("");
+  return `<section class="card">
+    <div class="card-head"><h2>Fotos de exhibiciones</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="sub" id="pptMsg" role="status"></span>
+        <button class="ppt-btn" type="button" data-ppt ${lista.length ? "" : "disabled"}>Armar PPT (${fmt(lista.length)})</button></div></div>
+    <div class="chips">${chips}</div>
+    ${sinFotos ? '<p class="sub">Las fotos todavía no están publicadas; aparecerán en la próxima actualización.</p>' : ""}
+    ${lista.length ? `<div class="galeria">${tarjetas}</div>
+      ${lista.length > st.limit ? `<button class="btn2 more" type="button" data-more>Ver más (${fmt(lista.length - st.limit)} restantes)</button>` : ""}`
+      : '<p class="empty">No hay exhibiciones con estos filtros.</p>'}
+    <p class="sub" style="margin:10px 0 0">El PPT usa la semana, los filtros y la lista elegida (${esc(VER_EX.find(v => v[0] === st.exVer)[1].toLowerCase())}), con 4 fotos por diapositiva agrupadas por cadena.</p>
+  </section>`;
+}
+
+let llaveFotos = null;
+async function claveFotos() {
+  const F = D.formularios.ex.fotos;
+  if (!F.cifrado) return null;
+  if (!llaveFotos) {
+    const b = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(CLAVE), "PBKDF2", false, ["deriveKey"]);
+    llaveFotos = crypto.subtle.deriveKey({ name: "PBKDF2", salt: b(F.sal), iterations: F.it, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  }
+  return llaveFotos;
+}
+
+// tipo "t" = miniatura, "g" = grande. Devuelve un Blob JPEG (en caché).
+const cacheFotos = new Map();
+function foto(id, tipo) {
+  const k = tipo + id;
+  if (!cacheFotos.has(k)) cacheFotos.set(k, (async () => {
+    const F = D.formularios.ex.fotos;
+    const r = await fetch(`${F.base}${tipo}/${id}${F.ext}`);
+    if (!r.ok) throw new Error(`foto ${r.status}`);
+    let datos = await r.arrayBuffer();
+    const llave = await claveFotos();
+    if (llave) datos = await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(datos, 0, 12) }, llave, new Uint8Array(datos, 12));
+    return new Blob([datos], { type: "image/jpeg" });
+  })().catch(e => { cacheFotos.delete(k); throw e; }));
+  return cacheFotos.get(k);
+}
+const urls = new Map();
+async function urlFoto(id, tipo) {
+  const k = tipo + id;
+  if (!urls.has(k)) urls.set(k, URL.createObjectURL(await foto(id, tipo)));
+  return urls.get(k);
+}
+
+let observador;
+function cargarMiniaturas() {
+  if (!D.formularios.ex.fotos?.base) return;
+  observador?.disconnect();
+  observador = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return;
+    observador.unobserve(e.target);
+    urlFoto(e.target.dataset.t, "t").then(u => { e.target.src = u; }).catch(() => { e.target.replaceWith("Sin foto"); });
+  }), { rootMargin: "300px" });
+  document.querySelectorAll("img[data-t]").forEach(i => observador.observe(i));
+}
+
+let fotoAbierta = null;
+async function abrirFoto(id) {
+  const r = D.formularios.ex.filas.find(x => x.id === id); if (!r) return;
+  const w = semanaEx(st.per.ex);
+  fotoAbierta = r;
+  const img = $("#fotoImg");
+  img.removeAttribute("src");
+  $("#fotoInfo").innerHTML = `<b>${esc(r.tipo)} · ${esc(r.loc)}</b><div class="sub">${esc(r.cad)} · ${esc(r.zon)} · ${esc(r.mer)}</div>
+    <div class="sub">${esc(r.skus.join(" + "))}</div>
+    <div class="sub">Ganada el ${fdate(r.alta)} · ${perdidaEn(r, w) ? `perdida el ${fdate(r.baja)}${r.mot ? " · " + esc(r.mot) : ""}` : `activa, lleva ${nDias(dias(r.alta, w.fin))}`}</div>`;
+  $("#fotoBajar").disabled = !r.foto;
+  $("#fotoDlg").showModal();
+  if (!r.foto || !D.formularios.ex.fotos?.base) return;
+  try {
+    if (urls.has("t" + id)) img.src = urls.get("t" + id);  // se ve al instante; luego la buena
+    img.src = await urlFoto(id, "g");
+  } catch (e) { $("#fotoInfo").insertAdjacentHTML("beforeend", '<div class="sub" style="color:var(--falta)">No se pudo cargar la foto.</div>'); }
+}
+
+const nombreArchivo = s => norm(s).replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 80);
+async function bajarFoto() {
+  const r = fotoAbierta; if (!r?.foto) return;
+  const a = document.createElement("a");
+  a.href = await urlFoto(r.id, "g");
+  a.download = `${nombreArchivo(`${r.loc} ${r.tipo} ${r.alta}`)}.jpg`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+$("#fotoCerrar").onclick = () => $("#fotoDlg").close();
+$("#fotoBajar").onclick = bajarFoto;
+$("#fotoDlg").addEventListener("click", ev => { if (ev.target === $("#fotoDlg")) $("#fotoDlg").close(); });
+
+/* ---------- PPT con formato.pptx ---------- */
+// plantilla_ppt.pptx es formato.pptx con solo la portada. Aquí se llena la
+// portada y se agregan diapositivas como las del formato: franja roja con la
+// cadena, 4 fotos con su etiqueta y pie, y la línea de cadena abajo.
+const EMU_COLS = [243687, 3224631, 6205575, 9186520];
+const FOTO_Y = 1546860, FOTO_W = 2761487, FOTO_H = 3681983;
+const xml = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const corta = (s, n) => s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
+
+function cargarScript(src) {
+  return new Promise((ok, mal) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => mal(new Error("sin conexión")); document.head.appendChild(s); });
+}
+
+function run(t, sz, color, b = false) {
+  return `<a:r><a:rPr lang="es-EC" sz="${sz}" b="${b ? 1 : 0}" dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:latin typeface="Calibri"/></a:rPr><a:t>${xml(t)}</a:t></a:r>`;
+}
+function caja(id, nombre, x, y, cx, cy, parrafos, algn = "l", anchor = "t") {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${nombre}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" anchor="${anchor}"><a:spAutoFit/></a:bodyPr><a:lstStyle/>${parrafos.map(p => `<a:p><a:pPr algn="${algn}"/>${p}</a:p>`).join("")}</p:txBody></p:sp>`;
+}
+function forma(id, nombre, x, y, cx, cy, color, geom = "rect", texto = "") {
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${nombre}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="${geom}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="${color}"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr rtlCol="0" anchor="ctr" lIns="0" rIns="0" tIns="0" bIns="0"/><a:lstStyle/><a:p><a:pPr algn="ctr"/>${texto || '<a:endParaRPr lang="es-EC"/>'}</a:p></p:txBody></p:sp>`;
+}
+// Recorta la foto para llenar el marco 3:4 sin deformarla (como en el formato).
+function recorte([w, h]) {
+  const marco = FOTO_W / FOTO_H, img = w / h;
+  if (Math.abs(img - marco) < 0.01) return "";
+  if (img > marco) { const c = Math.round((1 - marco / img) / 2 * 100000); return `<a:srcRect l="${c}" r="${c}"/>`; }
+  const c = Math.round((1 - img / marco) / 2 * 100000); return `<a:srcRect t="${c}" b="${c}"/>`;
+}
+
+function diapositiva(cadena, sub, pie, items, w) {
+  let id = 2, rid = 2;
+  const partes = [forma(id++, "Franja", 0, 0, 12191695, 1170432, "E2211C"),
+    caja(id++, "Titulo", 274320, 91440, 11643055, 566928, [run(cadena, 2000, "FFFFFF", true)], "l", "ctr"),
+    caja(id++, "Subtitulo", 274320, 640080, 11643055, 411480, [run(sub, 1200, "FFDEDC")], "l", "ctr")];
+  const rels = [];
+  items.forEach((it, i) => {
+    const r = it.r, x = EMU_COLS[i];
+    if (it.media) {
+      const k = `rId${rid++}`;
+      rels.push(`<Relationship Id="${k}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${it.media}"/>`);
+      partes.push(`<p:pic><p:nvPicPr><p:cNvPr id="${id++}" name="Foto ${i + 1}" descr="${xml(r.tipo + " · " + r.loc)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${k}"/>${recorte(r.foto)}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${FOTO_Y}"/><a:ext cx="${FOTO_W}" cy="${FOTO_H}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`);
+    } else {
+      partes.push(forma(id++, `Sin foto ${i + 1}`, x, FOTO_Y, FOTO_W, FOTO_H, "F2F2F2", "rect", run("Sin foto", 1200, "6B6B6B")));
+    }
+    const [txt, , color] = badgeEx(r, w);
+    partes.push(forma(id++, `Estado ${i + 1}`, x + 73152, FOTO_Y + 73152, 120000 + txt.length * 90000, 265176, color, "roundRect", run(txt, 1000, "FFFFFF", true)));
+    const estado = perdidaEn(r, w) ? `Perdida ${fdate(r.baja)} · duró ${nDias(dias(r.alta, r.baja))}` : `Activa · ${nDias(dias(r.alta, w.fin))}`;
+    partes.push(caja(id++, `Pie ${i + 1}`, x, 5486400, 2761488, 841248, [
+      run(r.loc, 1000, "242424", true),
+      run(`${r.tipo} · ${r.cat.join(", ")}`, 900, "6B6B6B"),
+      run(corta(r.skus.join(" + "), 90), 800, "6B6B6B"),
+      run(`Ganada ${fdate(r.alta)}/${r.alta.slice(0, 4)} · ${estado}`, 800, "6B6B6B")], "ctr"));
+  });
+  partes.push(caja(id++, "Pie de pagina", 274320, 6455664, 11643055, 274320, [run(pie, 900, "6B6B6B")], "l", "ctr"));
+  const s = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${partes.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+  const r = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout7.xml"/>${rels.join("")}</Relationships>`;
+  return [s, r];
+}
+
+async function armarPpt() {
+  const f = D.formularios.ex, w = semanaEx(st.per.ex);
+  const lista = fotosDe(filasPeriodo(f), w);
+  const btn = document.querySelector("[data-ppt]"), msg = t => { const m = $("#pptMsg"); if (m) m.textContent = t; };
+  if (!lista.length) return;
+  btn.disabled = true;
+  try {
+    msg("Preparando…");
+    if (!window.JSZip) await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
+    const zip = await JSZip.loadAsync(await (await fetch("plantilla_ppt.pptx")).arrayBuffer());
+    const per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
+    const filtros = [st.cad, st.neg, st.cat, st.sup, st.q && `“${st.q}”`].filter(Boolean);
+    const verTxt = VER_EX.find(v => v[0] === st.exVer)[1];
+    const titulo = st.cad || "EXHIBICIONES GANADAS";
+    const subtitulo = `${per}${filtros.length ? " · " + filtros.join(" · ") : ""}`;
+
+    // Portada del formato con nuestro título.
+    let portada = await zip.file("ppt/slides/slide1.xml").async("string");
+    portada = portada.replace(/<a:t>ATIMASA S\.A\.<\/a:t>/, `<a:t>${xml(titulo.toUpperCase())}</a:t>`)
+      .replace(/<a:t>REVESIMIENTO SUPERIOR<\/a:t>/, `<a:t>${xml(`${st.cad ? "Exhibiciones ganadas" : "Todas las cadenas"} · ${verTxt}`)}</a:t>`)
+      .replace("</a:p></p:txBody></p:sp></p:spTree>", `</a:p><a:p><a:pPr algn="ctr"/>${run(subtitulo, 1600, "FFDEDC")}</a:p></p:txBody></p:sp></p:spTree>`);
+    zip.file("ppt/slides/slide1.xml", portada);
+
+    // Fotos grandes, 4 a la vez.
+    let hechas = 0;
+    const conFoto = lista.filter(r => r.foto && f.fotos?.base);
+    const blobs = new Map();
+    for (let i = 0; i < conFoto.length; i += 4) {
+      await Promise.all(conFoto.slice(i, i + 4).map(async r => {
+        try { blobs.set(r.id, await (await foto(r.id, "g")).arrayBuffer()); } catch (e) { /* queda «Sin foto» */ }
+        msg(`Bajando fotos ${++hechas} de ${conFoto.length}…`);
+      }));
+    }
+
+    // Diapositivas: por cadena, 4 exhibiciones cada una.
+    const grupos = new Map();
+    for (const r of lista) { if (!grupos.has(r.cad)) grupos.set(r.cad, []); grupos.get(r.cad).push(r); }
+    let n = 1, ct = await zip.file("[Content_Types].xml").async("string");
+    let pres = await zip.file("ppt/presentation.xml").async("string");
+    let presRels = await zip.file("ppt/_rels/presentation.xml.rels").async("string");
+    const ids = [], rels = [], tipos = [];
+    for (const [cad, xs] of grupos) {
+      const paginas = Math.ceil(xs.length / 4);
+      for (let p = 0; p < paginas; p++) {
+        n++;
+        const items = xs.slice(p * 4, p * 4 + 4).map((r, i) => {
+          const media = blobs.has(r.id) ? `exh_${n}_${i + 1}.jpg` : "";
+          if (media) zip.file(`ppt/media/${media}`, blobs.get(r.id));
+          return { r, media };
+        });
+        const zonas = [...new Set(xs.map(r => r.zon))].join(", ");
+        const pie = `Cadena: ${cad}   ·   Zona: ${corta(zonas, 80)}   ·   ${per}${paginas > 1 ? `   ·   ${p + 1} de ${paginas}` : ""}`;
+        const [s, r] = diapositiva(cad, `Exhibiciones ganadas · ${verTxt} · ${fmt(xs.length)} ${xs.length === 1 ? "exhibición" : "exhibiciones"}`, pie, items, w);
+        zip.file(`ppt/slides/slide${n}.xml`, s);
+        zip.file(`ppt/slides/_rels/slide${n}.xml.rels`, r);
+        ids.push(`<p:sldId id="${300 + n}" r:id="rIdS${n}"/>`);  // la portada usa 258
+        rels.push(`<Relationship Id="rIdS${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${n}.xml"/>`);
+        tipos.push(`<Override PartName="/ppt/slides/slide${n}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`);
+      }
+    }
+    zip.file("ppt/presentation.xml", pres.replace("</p:sldIdLst>", ids.join("") + "</p:sldIdLst>"));
+    zip.file("ppt/_rels/presentation.xml.rels", presRels.replace("</Relationships>", rels.join("") + "</Relationships>"));
+    zip.file("[Content_Types].xml", ct.replace("</Types>", tipos.join("") + "</Types>"));
+    const app = await zip.file("docProps/app.xml").async("string");
+    zip.file("docProps/app.xml", app.replace(/<Slides>\d+<\/Slides>/, `<Slides>${n}</Slides>`));
+
+    msg("Generando archivo…");
+    const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `exhibiciones_${nombreArchivo([...filtros, verTxt].join(" ")) || "todas"}_semana${(per.match(/^Semana (\d+)/) || [])[1] || ""}.pptx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const faltan = lista.length - blobs.size;
+    msg(`Listo: ${n} diapositivas${faltan ? ` · ${faltan} sin foto` : ""}`);
+  } catch (e) {
+    msg(`No se pudo armar el PPT (${e.message}).`);
+  } finally { btn.disabled = false; }
+}
+
 function descargarEx(f) {
   const w = semanaEx(st.per.ex), per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -625,11 +919,15 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
   const d = t.dataset;
+  if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
+  if (d.exver) { st.exVer = d.exver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
+  if (d.foto) { abrirFoto(d.foto); return; }
+  if ("ppt" in d) { armarPpt(); return; }
   if (d.grp) { st.abiertos.has(d.grp) ? st.abiertos.delete(d.grp) : st.abiertos.add(d.grp); renderMain(D.formularios[st.tab]); return; }
   if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
-  if (d.f === "clear") { st.acu = st.sup = st.neg = st.cat = st.q = ""; render(); return; }
+  if (d.f === "clear") { st.acu = st.cad = st.sup = st.neg = st.cat = st.q = ""; render(); return; }
   if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
   if ("mer" in d) { st.abiertos.has(d.mer) ? st.abiertos.delete(d.mer) : st.abiertos.add(d.mer); renderMain(D.formularios[st.tab]); return; }
   if (d.vista) { st.vista = d.vista; renderMain(D.formularios[st.tab]); return; }

@@ -25,7 +25,10 @@ import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 from collections import Counter, defaultdict
@@ -36,6 +39,7 @@ import requests
 
 AQUI = Path(__file__).resolve().parent
 PLANTILLA = AQUI / "plantilla.html"
+PLANTILLA_PPT = AQUI / "plantilla_ppt.pptx"    # portada de formato.pptx; la pagina agrega las fotos
 SALIDA = AQUI / "docs" / "index.html"
 
 ECUADOR = timezone(timedelta(hours=-5))  # sin horario de verano
@@ -51,6 +55,9 @@ SEMANAS_PROMO = 4                  # semanas hacia atras que muestra promociones
 SEMANAS_AC = 8                     # semanas ISO hacia atras que muestra acuerdos
 SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
 MAX_DETALLE = 6                    # novedades listadas por registro
+FOTOS_RAMA = os.environ.get("FOTOS_RAMA", "fotos")  # rama del repo donde viven las fotos
+MINIATURA = 400                    # px del lado largo de la miniatura de la galeria
+ITERACIONES = 250_000              # PBKDF2 de la clave de la pagina
 
 # Exhibiciones de prueba que siguen en ganadas_moderno: no se cuentan.
 EXCLUIR_EX = {
@@ -683,7 +690,170 @@ def opciones_xml(xml: str, instancia: str) -> dict[str, dict[str, str]]:
     return out
 
 
-def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
+def preparar_foto(original: bytes) -> tuple[bytes, bytes, tuple[int, int]]:
+    """Foto de ODK -> (grande, miniatura, (ancho, alto)), ya derecha segun EXIF."""
+    from PIL import Image, ImageOps
+
+    im = Image.open(io.BytesIO(original))
+    derecha = im.format == "JPEG" and im.getexif().get(0x0112, 1) == 1
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    if derecha:
+        grande = original  # el formulario ya la limita a 1024 px
+    else:
+        b = io.BytesIO(); im.save(b, "JPEG", quality=90); grande = b.getvalue()
+    mini = im.copy()
+    mini.thumbnail((MINIATURA, MINIATURA))
+    b = io.BytesIO(); mini.save(b, "JPEG", quality=55, optimize=True)
+    return grande, b.getvalue(), im.size
+
+
+def _git(args: list[str], cwd: Path, entrada: bytes | None = None, env: dict | None = None) -> bytes:
+    r = subprocess.run(["git", *args], cwd=cwd, input=entrada, capture_output=True, env=env)
+    if r.returncode:
+        raise RuntimeError(f"git {args[0]}: {r.stderr.decode(errors='ignore').strip()[:300]}")
+    return r.stdout
+
+
+def repo_github() -> str | None:
+    if os.environ.get("GITHUB_REPOSITORY"):
+        return os.environ["GITHUB_REPOSITORY"]
+    try:
+        url = _git(["remote", "get-url", "origin"], AQUI).decode().strip()
+    except (RuntimeError, OSError):
+        return None
+    m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(\.git)?$", url)
+    return m.group(1) if m else None
+
+
+def _aes(clave: str, sal: bytes, iteraciones: int):
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    return AESGCM(PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=sal, iterations=iteraciones).derive(clave.encode()))
+
+
+def sincronizar_fotos(odk: Odk, origen: dict[str, tuple[str, str]], clave: str | None) -> dict:
+    """Sube a la rama de fotos las que faltan (grande + miniatura) y devuelve
+    lo que la pagina necesita para mostrarlas: {base, cifrado, sal, it, ext, dims}.
+
+    La rama solo recibe commits cuando hay fotos nuevas, y se baja sin el
+    contenido de las fotos (--filter=blob:none): cada corrida descarga de ODK
+    solo lo nuevo. Con SEGUIMIENTO_CLAVE cada archivo va cifrado (AES-GCM,
+    12 bytes de IV + datos) con una clave derivada de la sal del manifest.
+    """
+    repo = repo_github()
+    if not repo:
+        print("Aviso: sin repositorio de GitHub, no se publican fotos")
+        return {}
+    from cryptography.exceptions import InvalidTag
+
+    b64 = lambda b: base64.b64encode(b).decode()
+    tmp = Path(tempfile.mkdtemp(prefix="fotos_"))
+    git = lambda *a, **k: _git(list(a), tmp, **k)
+    manifest: dict = {}
+    nuevas: dict[str, tuple[bytes, bytes]] = {}
+    try:
+        git("init", "-q", "--bare")
+        # FOTOS_REMOTO / FOTOS_BASE: para probar con un repositorio y un servidor locales.
+        git("remote", "add", "origin", os.environ.get("FOTOS_REMOTO") or f"https://github.com/{repo}.git")
+        for k, v in [("core.repositoryformatversion", "1"), ("extensions.partialClone", "origin"),
+                     ("remote.origin.promisor", "true"), ("remote.origin.partialclonefilter", "blob:none")]:
+            git("config", k, v)
+        # En GitHub Actions el token de actions/checkout vive en la config del repo.
+        try:
+            for linea in _git(["config", "--get-regexp", r"^http\..*\.extraheader$"], AQUI).decode().splitlines():
+                k, v = linea.split(" ", 1)
+                git("config", k, v)
+        except RuntimeError:
+            pass
+
+        padre = None
+        if git("ls-remote", "--heads", "origin", FOTOS_RAMA).strip():
+            git("fetch", "-q", "--depth", "1", "--filter=blob:none", "origin", FOTOS_RAMA)
+            padre = git("rev-parse", "FETCH_HEAD").decode().strip()
+            try:
+                manifest = json.loads(git("cat-file", "-p", f"{padre}:manifest.json"))
+            except (RuntimeError, ValueError):
+                manifest = {}
+
+        aes = None
+        valido = bool(manifest) and manifest.get("cifrado") == bool(clave)
+        if valido and clave:
+            aes = _aes(clave, base64.b64decode(manifest["sal"]), manifest["it"])
+            chk = base64.b64decode(manifest["check"])
+            try:
+                valido = aes.decrypt(chk[:12], chk[12:], None) == b"ok"
+            except InvalidTag:
+                valido = False
+        if not valido:  # primera vez o cambio la clave: se rehace la rama
+            manifest, padre = {"cifrado": bool(clave), "fotos": {}}, None
+            if clave:
+                sal = os.urandom(16)
+                aes = _aes(clave, sal, ITERACIONES)
+                iv = os.urandom(12)
+                manifest.update(sal=b64(sal), it=ITERACIONES, check=b64(iv + aes.encrypt(iv, b"ok", None)))
+
+        def sellar(datos: bytes) -> bytes:
+            if not aes:
+                return datos
+            iv = os.urandom(12)
+            return iv + aes.encrypt(iv, datos, None)
+
+        dims: dict = manifest.setdefault("fotos", {})
+        for ent, (instancia, nombre) in origen.items():
+            if ent in dims:
+                continue
+            try:
+                original = odk._get(f"{odk._form(FORM_EX)}/submissions/{instancia}/attachments/{nombre}").content
+                grande, mini, tam = preparar_foto(original)
+            except Exception as e:  # una foto mala no detiene el resto
+                print(f"Aviso: foto {nombre} no disponible ({str(e)[:80]})")
+                continue
+            nuevas[ent] = (grande, mini)
+            dims[ent] = list(tam)
+
+        if nuevas or (not padre and dims):
+            ext = ".bin" if aes else ".jpg"
+            env = {**os.environ, "GIT_INDEX_FILE": str(tmp / "indice"),
+                   "GIT_AUTHOR_NAME": "seguimiento", "GIT_AUTHOR_EMAIL": "seguimiento@users.noreply.github.com",
+                   "GIT_COMMITTER_NAME": "seguimiento", "GIT_COMMITTER_EMAIL": "seguimiento@users.noreply.github.com"}
+            git("read-tree", padre or "--empty", env=env)
+
+            def agregar(ruta: str, datos: bytes):
+                sha = git("hash-object", "-w", "--stdin", entrada=datos).decode().strip()
+                git("update-index", "--add", "--cacheinfo", f"100644,{sha},{ruta}", env=env)
+
+            for ent, (grande, mini) in nuevas.items():
+                agregar(f"g/{ent}{ext}", sellar(grande))
+                agregar(f"t/{ent}{ext}", sellar(mini))
+            agregar("manifest.json", json.dumps(manifest, separators=(",", ":")).encode())
+            arbol = git("write-tree", env=env).decode().strip()
+            commit = git("commit-tree", arbol, "-m", f"{len(nuevas)} foto(s) nuevas",
+                         *(["-p", padre] if padre else []), env=env).decode().strip()
+            git("push", "-q", *([] if padre else ["-f"]), "origin", f"{commit}:refs/heads/{FOTOS_RAMA}")
+            print(f"Fotos: {len(nuevas)} nuevas, {len(dims)} en total")
+    except Exception as e:
+        print(f"Aviso: no se pudieron actualizar las fotos ({str(e)[:200]})")
+        # Solo se muestran las que ya estaban publicadas.
+        for ent in nuevas:
+            manifest.get("fotos", {}).pop(ent, None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if not manifest.get("fotos"):
+        return {}
+    return {
+        "base": os.environ.get("FOTOS_BASE") or f"https://raw.githubusercontent.com/{repo}/{FOTOS_RAMA}/",
+        "cifrado": manifest.get("cifrado", False),
+        "sal": manifest.get("sal"),
+        "it": manifest.get("it"),
+        "ext": ".bin" if manifest.get("cifrado") else ".jpg",
+        "dims": manifest["fotos"],
+    }
+
+
+def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | None = None,
+                       con_fotos: bool = True) -> dict:
     xml = odk.xml(FORM_EX)
     categorias = {k: v.get("label", "").upper() for k, v in opciones_xml(xml, "categorias").items()}
     sku_por_ean = {v.get("ean", ""): v for v in opciones_xml(xml, "skus").values()}
@@ -695,11 +865,15 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
     gano: dict[str, str] = {}
     # Respaldo si ese registro no esta: el ultimo que levanto el local.
     ultimo_local: dict[str, str] = {}
+    # La foto se toma al ganarla: entidad -> (registro, archivo).
+    origen_foto: dict[str, tuple[str, str]] = {}
     for r in sorted(registros, key=lambda r: g(r, "__system/submissionDate") or ""):
         ultimo_local[g(r, "grp_local/local_id") or ""] = g(r, "__system/submitterName") or ""
         for e in r.get("exhibiciones") or []:
             if e.get("modo") == "nueva" and e.get("nuevo_id"):
                 gano[e["nuevo_id"]] = g(r, "__system/submitterName") or ""
+                if g(e, "grp_foto/foto") and e["nuevo_id"] not in EXCLUIR_EX:
+                    origen_foto[e["nuevo_id"]] = (r["__id"], g(e, "grp_foto/foto"))
 
     filas = []
     for u in entidades:
@@ -737,6 +911,12 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
             "com": limpio(u.get("comentario_baja")),
         })
 
+    fotos = sincronizar_fotos(odk, origen_foto, clave) if con_fotos else {}
+    for f in filas:
+        if f["id"] in fotos.get("dims", {}):
+            f["foto"] = fotos["dims"][f["id"]]
+    fotos.pop("dims", None)
+
     semana_hoy = lunes(hoy)
     primera = lunes(min((date.fromisoformat(f["alta"]) for f in filas), default=hoy))
     semanas = [semana_hoy - timedelta(weeks=i) for i in range(SEMANAS_EX)]
@@ -748,6 +928,7 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
         "periodos": [{"id": s.isoformat(), "label": etiqueta_semana(s)} for s in semanas],
         "periodo_tipo": "semana",
         "filas": filas,
+        "fotos": fotos,
         "registros": len(registros),
     }
 
@@ -778,6 +959,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--env", help="archivo .env con ODK_EMAIL y ODK_PASSWORD")
     ap.add_argument("--salida", default=str(SALIDA))
+    ap.add_argument("--sin-fotos", action="store_true", help="no descargar ni publicar fotos")
     args = ap.parse_args()
     if args.env:
         leer_env(args.env)
@@ -796,7 +978,8 @@ def main() -> None:
     ac = armar_acuerdos(odk, personal, hoy)
     pr = armar_promociones(odk, personal, hoy)
     vi = armar_visibilidad(odk, personal, hoy)
-    ex = armar_exhibiciones(odk, personal, hoy)
+    clave = os.environ.get("SEGUIMIENTO_CLAVE")
+    ex = armar_exhibiciones(odk, personal, hoy, clave, con_fotos=not args.sin_fotos)
 
     datos = {
         "actualizado": ahora.isoformat(timespec="minutes"),
@@ -804,7 +987,6 @@ def main() -> None:
         "formularios": {"vis": vi, "ac": ac, "pr": pr, "ex": ex},
     }
     texto = json.dumps(datos, ensure_ascii=False, separators=(",", ":"))
-    clave = os.environ.get("SEGUIMIENTO_CLAVE")
     carga = {"cifrado": cifrar(texto, clave)} if clave else {"plano": datos}
 
     html = PLANTILLA.read_text(encoding="utf-8")
@@ -815,6 +997,7 @@ def main() -> None:
     salida.write_text(html, encoding="utf-8")
     # La pagina publicada consulta este archivo para recargarse cuando hay datos nuevos.
     (salida.parent / "version.json").write_text(json.dumps({"actualizado": datos["actualizado"]}), encoding="utf-8")
+    shutil.copyfile(PLANTILLA_PPT, salida.parent / PLANTILLA_PPT.name)
 
     for clave_f, f in datos["formularios"].items():
         if clave_f == "ex":
