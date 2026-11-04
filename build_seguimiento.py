@@ -52,6 +52,13 @@ SEMANAS_AC = 8                     # semanas ISO hacia atras que muestra acuerdo
 SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
 MAX_DETALLE = 6                    # novedades listadas por registro
 
+# Exhibiciones de prueba que siguen en ganadas_moderno: no se cuentan.
+EXCLUIR_EX = {
+    "f15f1235-79f2-47e0-bccc-1f975b9ac217",  # HIPERMARKET BUIJO · Cabecera jabón
+    "941e6ea5-0335-43d1-bfe1-965c0cf67807",  # HIPERMARKET BUIJO · Ruma aceite
+    "336f8cdd-f895-4cdd-af6f-51a1ea1098c1",  # LA ECUATORIANA · Ruma Skittles
+}
+
 MOTIVOS_AC = {
     "sin_stock": "sin stock",
     "sin_alcance": "sin alcance",
@@ -697,7 +704,7 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date) -> dict:
     filas = []
     for u in entidades:
         alta = fecha_de(u.get("fecha_alta"))
-        if not alta:
+        if not alta or u.get("name") in EXCLUIR_EX:
             continue
         baja = fecha_de(u.get("fecha_baja")) if u.get("estado") == "baja" else None
         eans = (u.get("eans") or "").split()
