@@ -9,7 +9,7 @@ Pages la sirve.
     seguimiento_muebles_alquilados_uiux_v4   muebles_por_local_lista            un registro por local cada mes
     acuerdos_comerciales                     acuerdos_por_local_lista           un registro por local y acuerdo en su vigencia
     promociones_mercaderista                 locales_promociones_lista          un registro por local cada semana (lun-dom)
-    extravisibilidad_ganados_moderno         ganadas_moderno                    exhibiciones activas, ganadas y perdidas por semana
+    extravisibilidad_ganados_moderno         ganadas_moderno                    exhibiciones activas, ganadas y perdidas por semana y canal
 
 Credenciales por variables de entorno (ODK_EMAIL, ODK_PASSWORD) o con
 ``--env ruta/.env``. Si SEGUIMIENTO_CLAVE esta definida, los datos se cifran
@@ -865,15 +865,26 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | Non
     gano: dict[str, str] = {}
     # Respaldo si ese registro no esta: el ultimo que levanto el local.
     ultimo_local: dict[str, str] = {}
-    # La foto se toma al ganarla: entidad -> (registro, archivo).
+    # Fotos: una al ganarla y, si sigue, otra cada 7 dias o mas (hasta 2 al
+    # mes). foto -> (registro, archivo); entidad -> [(fecha, foto, es_seguimiento)].
+    # La de alta se llama como la entidad; las de seguimiento, entidad_AAAAMMDD.
     origen_foto: dict[str, tuple[str, str]] = {}
+    fotos_de: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
     for r in sorted(registros, key=lambda r: g(r, "__system/submissionDate") or ""):
         ultimo_local[g(r, "grp_local/local_id") or ""] = g(r, "__system/submitterName") or ""
+        fecha = str(r.get("fecha") or "")[:10]
         for e in r.get("exhibiciones") or []:
             if e.get("modo") == "nueva" and e.get("nuevo_id"):
                 gano[e["nuevo_id"]] = g(r, "__system/submitterName") or ""
                 if g(e, "grp_foto/foto") and e["nuevo_id"] not in EXCLUIR_EX:
                     origen_foto[e["nuevo_id"]] = (r["__id"], g(e, "grp_foto/foto"))
+                    fotos_de[e["nuevo_id"]].append((fecha, e["nuevo_id"], 0))
+            seg = g(e, "grp_seguimiento/foto_seguimiento")
+            if e.get("modo") == "seguimiento" and seg and e.get("ent_id") and e["ent_id"] not in EXCLUIR_EX:
+                pid = f"{e['ent_id']}_{fecha.replace('-', '')}"
+                if pid not in origen_foto:
+                    fotos_de[e["ent_id"]].append((fecha, pid, 1))
+                origen_foto[pid] = (r["__id"], seg)
 
     filas = []
     for u in entidades:
@@ -897,6 +908,8 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | Non
             "lid": u.get("local_id", ""),
             "loc": limpio(u.get("local_nombre")),
             "cad": limpio(u.get("cadena")),
+            # Antes de agregar canales el formulario era solo de canal moderno.
+            "can": limpio(u.get("canal")) or "Moderno",
             "zon": limpio(u.get("zona")),
             "sup": sup,
             "mer": merc,
@@ -912,10 +925,11 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | Non
         })
 
     fotos = sincronizar_fotos(odk, origen_foto, clave) if con_fotos else {}
+    dims = fotos.pop("dims", {})
     for f in filas:
-        if f["id"] in fotos.get("dims", {}):
-            f["foto"] = fotos["dims"][f["id"]]
-    fotos.pop("dims", None)
+        # Solo las publicadas, de la mas vieja a la mas nueva: f = fecha, d = [ancho, alto], s = de seguimiento.
+        f["fotos"] = [{"id": pid, "f": fecha, "d": dims[pid], "s": s}
+                      for fecha, pid, s in sorted(fotos_de.get(f["id"], [])) if pid in dims]
 
     semana_hoy = lunes(hoy)
     primera = lunes(min((date.fromisoformat(f["alta"]) for f in filas), default=hoy))
@@ -923,7 +937,7 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | Non
     semanas = [s for s in semanas if s >= primera]
     return {
         "titulo": "Exhibiciones ganadas",
-        "subtitulo": "Canal moderno · una exhibición sigue activa hasta que se registra su baja",
+        "subtitulo": "Moderno, tradicional y farmacias · una exhibición sigue activa hasta que se registra su baja",
         "unidad": "exhibiciones",
         "periodos": [{"id": s.isoformat(), "label": etiqueta_semana(s)} for s in semanas],
         "periodo_tipo": "semana",

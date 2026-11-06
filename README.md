@@ -27,18 +27,25 @@ Por cada semana se muestra:
 Se agrupa por negocio, categoría, SKU, zona, cadena, tipo de exhibición, local
 o mercaderista. Una exhibición con varios productos cuenta en cada negocio,
 categoría o SKU que tiene. La categoría sale del catálogo de SKU del propio
-formulario. Esta pestaña tiene además filtro por cadena.
+formulario. Esta pestaña tiene además filtros por canal (Moderno,
+Tradicional, Farmacias / especiales) y cadena; las exhibiciones registradas
+antes de que el formulario tuviera canal cuentan como Moderno.
 
 #### Fotos y PPT
 
-La vista **Fotos** muestra la foto que se tomó al ganar cada exhibición. La
-galería carga miniaturas livianas (unos 20 KB); al ampliar o descargar una foto
-se usa la original (hasta 1024 px, como la limita el formulario).
+La vista **Fotos** muestra la foto que se tomó al ganar cada exhibición. Si
+sigue activa, el formulario pide otra foto de seguimiento cuando pasaron 7 días
+o más desde la última (hasta 2 al mes): esas exhibiciones se ven con dos fotos,
+la de cuando se ganó y la de seguimiento más reciente; al ampliar se puede
+pasar por todas. La galería carga miniaturas livianas (unos 20 KB); al ampliar
+o descargar una foto se usa la original (hasta 1024 px, como la limita el
+formulario).
 
 **Armar PPT** genera en el navegador una presentación con el formato de
 `formato.pptx`: la portada con el logo y luego, por cadena, diapositivas de 4
-fotos con su estado (nueva, activa o perdida), local, tipo, categoría, SKU y
-fecha. Usa la semana, los filtros y la lista elegidos (activas, ganadas en la
+fotos con su estado (nueva, activa o perdida), local, tipo, categoría, canal,
+SKU y fecha. Una exhibición con foto de seguimiento ocupa dos espacios: la foto
+de cuando se ganó y la de seguimiento, cada una con su fecha. Usa la semana, los filtros y la lista elegidos (activas, ganadas en la
 semana, perdidas o todas).
 
 * `plantilla_ppt.pptx` es `formato.pptx` con solo la portada (las fotos de
