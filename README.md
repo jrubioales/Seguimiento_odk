@@ -1,7 +1,7 @@
 ﻿# Seguimiento ODK
 
 Página única (`docs/index.html`) para ver qué subió cada mercaderista a ODK, qué
-le falta y qué subió con novedad, en tres formularios:
+le falta y qué subió con novedad, en estos formularios:
 
 | Pestaña | Formulario ODK | Universo (lista de entidades del formulario) | Qué se espera |
 |---|---|---|---|
@@ -9,6 +9,26 @@ le falta y qué subió con novedad, en tres formularios:
 | Acuerdos comerciales | `acuerdos_comerciales` | `acuerdos_por_local_lista` (829 local × acuerdo) | 1 registro por local y acuerdo **cada semana ISO** (lunes a domingo) mientras el acuerdo esté vigente |
 | Promociones | `promociones_mercaderista` | `locales_promociones_lista` (920 locales) | 1 registro por local **cada semana** (lunes a domingo) |
 | Exhibiciones ganadas | `extravisibilidad_ganados_moderno` | `ganadas_moderno` (una entidad por exhibición) | No hay registros esperados: mide exhibiciones **activas, ganadas y perdidas** por semana ISO |
+| SOS percha | `sos_participacion_percha_moderno` | `tiendas_moderno_1008.csv` (447 locales) | 1 registro por local **cada mes** |
+| Planes comerciales | `planes_comerciales` | `locales_planes_1028.csv` (`plan_n` = Plan Ninja, `plan_d` = Plan Aliado Diamante) | 1 registro por local **y plan** cada mes |
+| Check outs | `check_outs` | `locales_checkouts.csv` (farmacias y gasolineras) | 1 registro por local **cada mes** |
+| KBDS | `kbds` | `locales_kbds.csv` (442 locales) | 1 registro por local **cada mes** |
+
+### Encuestas mensuales (SOS, planes, check outs, KBDS)
+
+La meta es la lista de locales del propio formulario y se reinicia el día 1
+de cada mes: en diciembre todo vuelve a «falta subir». Se ve el avance por
+zona, por cadena / cliente, por mercaderista o local por local, con filtros de
+zona, cadena / cliente y, en Planes y Check outs, plan o canal. El
+mercaderista y el supervisor salen de las listas de Promociones, Visibilidad
+y Acuerdos (mismo código de local); si el local no está en ellas, se usa
+quien lo subió. Planes comerciales usa otros códigos de local, por eso casi
+todos sus locales quedan «Sin asignar». Los meses antes del primer registro
+de una encuesta no se muestran.
+
+Cuenta como novedad: SOS que no se pudo medir o categorías que ya no están,
+local de Planes sin aceite de girasol, check out inexistente, KBDS que no se
+pudo levantar, y fotos sin terminar de subir.
 
 ### Exhibiciones ganadas
 
@@ -148,6 +168,8 @@ En [`build_seguimiento.py`](build_seguimiento.py):
 | `INICIO_VIS` | primer mes que se muestra en Visibilidad |
 | `SEMANAS_PROMO` | cuántas semanas hacia atrás muestra Promociones |
 | `SEMANAS_EX` | cuántas semanas hacia atrás muestra Exhibiciones ganadas |
+| `MESES_MENS` | cuántos meses muestran SOS, planes, check outs y KBDS |
+| `PLANES` | qué columna de la lista marca cada plan comercial |
 | `MOTIVOS_AC`, `MOTIVOS_VIS`, `ESTADOS_PR` | cómo se redactan los motivos de novedad |
 
 La interfaz está en [`plantilla.html`](plantilla.html). El generador reemplaza

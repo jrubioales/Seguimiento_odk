@@ -223,12 +223,13 @@ tr.open .caret { transform: rotate(90deg); }
 
 <script>
 const CARGA = /*__CARGA__*/null;
-const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "Promociones"], ["ex", "Exhibiciones ganadas"]];
+const FORMS = [["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"], ["pr", "Promociones"], ["ex", "Exhibiciones ganadas"],
+  ["sos", "SOS percha"], ["pl", "Planes comerciales"], ["co", "Check outs"], ["kb", "KBDS"]];
 const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
-const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", cad: "", neg: "", cat: "", q: "", vista: "per", ver: "falta", dim: "cat",
+const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", q: "", vista: "zon", ver: "falta", dim: "cat",
   exVista: "res", exVer: "act", abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
@@ -394,6 +395,7 @@ function filasPeriodo(f, per = st.per[f.key]) {
   const q = norm(st.q).trim();
   const acu = f.key === "ac" ? st.acu : "";
   return f.filas.filter(r => r.p === per && r.e !== "prog" && (!acu || r.acu === acu) && (!st.sup || r.sup === st.sup) &&
+    (!st.zon || r.zon === st.zon) && (!st.cad || r.cad === st.cad) && (!f.can_titulo || !st.can || r.can === st.can) &&
     (!st.neg || r.neg.includes(st.neg)) && (!st.cat || r.cat.includes(st.cat)) && (!q || r._q.includes(q)));
 }
 
@@ -412,7 +414,7 @@ function tag(r) {
   return `<span class="tag t-falta"><span class="ic">✕</span>${r.e === "no" ? "No subió" : "Falta subir"}</span>`;
 }
 
-function nombreLocal(f, r) { return `${esc(r.loc)}<div class="sub">${esc(f.key === "ac" ? r.acu : r.cad)}</div>`; }
+function nombreLocal(f, r) { return `${esc(r.loc)}<div class="sub">${esc(f.key === "ac" ? r.acu : [r.can, r.cad, r.zon].filter(Boolean).join(" · "))}</div>`; }
 
 /* ---------- render ---------- */
 function render() {
@@ -427,27 +429,38 @@ function renderFiltros(f) {
   const uniq = (rs, k) => [...new Set(rs.flatMap(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
   // Un filtro elegido en otra pestaña que aquí no existe se suelta.
-  const propios = f.key === "ac" ? ["acu"] : f.key === "ex" ? ["can", "cad"] : [];
-  for (const k of [...propios, "sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
+  const ex = f.key === "ex";
+  // Un filtro elegido en otra pestaña que aquí no existe se suelta.
+  const propios = f.key === "ac" ? ["acu"] : [];
+  if (ex || f.can_titulo) propios.push("can");
+  if (!ex) propios.push("zon");
+  for (const k of [...propios, "cad", "sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
+  if (!propios.includes("can")) st.can = "";
+  if (!propios.includes("zon")) st.zon = "";
+  // Cadena depende de zona y del canal/plan elegidos.
+  const paraCad = base.filter(r => (!st.can || r.can === st.can) && (!st.zon || r.zon === st.zon));
+  const negs = uniq(base, "neg");
   $("#filters").innerHTML = `
     ${f.key === "ac" ? `<select data-f="acu" aria-label="Acuerdo">${opt(uniq(base, "acu"), st.acu, "Todos los acuerdos")}</select>` : ""}
-    ${f.key === "ex" ? `<select data-f="can" aria-label="Canal">${opt(uniq(base, "can"), st.can, "Todos los canales")}</select>
-      <select data-f="cad" aria-label="Cadena">${opt(uniq(base.filter(r => !st.can || r.can === st.can), "cad"), st.cad, "Todas las cadenas")}</select>` : ""}
+    ${ex || f.can_titulo ? `<select data-f="can" aria-label="Canal">${opt(uniq(base, "can"), st.can, f.can_titulo || "Todos los canales")}</select>` : ""}
+    ${ex ? "" : `<select data-f="zon" aria-label="Zona">${opt(uniq(base.filter(r => !st.can || r.can === st.can), "zon"), st.zon, "Todas las zonas")}</select>`}
+    <select data-f="cad" aria-label="Cadena o cliente">${opt(uniq(paraCad, "cad"), st.cad, ex ? "Todas las cadenas" : "Todas las cadenas / clientes")}</select>
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
-    <select data-f="neg" aria-label="Negocio">${opt(uniq(base, "neg"), st.neg, "Todos los negocios")}</select>
-    <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>
+    ${negs.length ? `<select data-f="neg" aria-label="Negocio">${opt(negs, st.neg, "Todos los negocios")}</select>
+    <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>` : ""}
     <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
-    ${st.acu || (f.key === "ex" && (st.can || st.cad)) || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
 }
 
 // Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
-function filasBase(f) { const g = { acu: st.acu, can: st.can, cad: st.cad, sup: st.sup, neg: st.neg, cat: st.cat, q: st.q }; st.acu = st.can = st.cad = st.sup = st.neg = st.cat = st.q = ""; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+const FILTROS = ["acu", "can", "zon", "cad", "sup", "neg", "cat", "q"];
+function filasBase(f) { const g = {}; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
 
 function renderMain(f) {
   if (f.key === "ex") return renderEx(f);
   const rs = filasPeriodo(f);
   const c = contar(rs);
-  const unidad = f.key === "ac" ? "acuerdos" : "locales";
+  const unidad = f.key === "ac" ? "acuerdos" : f.unidad || "locales";
   const avance = `<section class="avance">
     <div class="big">${c.pct}%<small>subido</small></div>
     <div class="bar">${track(c)}<div class="sub" style="margin-top:6px"><b>${esc(f.periodos.find(p => p.id === st.per[f.key])?.label || "")}</b> · ${fmt(c.sub)} de ${fmt(c.tot)} ${unidad}</div></div>
@@ -457,12 +470,14 @@ function renderMain(f) {
       <span><b>${fmt(c.nov)}</b>Con novedad</span>
     </div></section>`;
 
-  const cuerpo = st.vista === "per" ? porMercaderista(f, rs) : porLocal(f, rs, c);
+  const grp = GRUPOS.find(([k]) => k === st.vista);
+  const cuerpo = grp ? porGrupo(f, rs, grp) : porLocal(f, rs, c);
+  const btn = (k, t) => `<button type="button" data-vista="${k}" aria-pressed="${st.vista === k}">${t}</button>`;
   $("#main").innerHTML = franjaPeriodos(f) + avance + `<section class="card">
     <div class="card-head">
-      <h2>¿Qué les falta subir?</h2>
+      <h2>¿Qué falta subir?</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="seg" role="group"><button type="button" data-vista="per" aria-pressed="${st.vista === "per"}">Por mercaderista</button><button type="button" data-vista="loc" aria-pressed="${st.vista === "loc"}">Por local</button></div>
+        <div class="seg" role="group">${GRUPOS.map(([k, , t]) => btn(k, "Por " + t)).join("")}${btn("loc", "Por local")}</div>
         <button class="btn2" type="button" data-csv>Descargar</button>
       </div>
     </div>${cuerpo}</section>`;
@@ -487,36 +502,41 @@ function franjaPeriodos(f) {
 
 const sinPersona = n => /^sin (alcance|asignar)/i.test(n) ? 1 : 0;
 
-function porMercaderista(f, rs) {
+// Agrupaciones de «¿Qué falta subir?»: [clave en st.vista, campo de la fila, nombre].
+const GRUPOS = [["zon", "zon", "zona"], ["cad", "cad", "cadena / cliente"], ["per", "mer", "mercaderista"]];
+
+function porGrupo(f, rs, [vista, campo, nombre]) {
   const m = new Map();
-  for (const r of rs) { if (!m.has(r.mer)) m.set(r.mer, []); m.get(r.mer).push(r); }
-  const grupos = [...m].map(([mer, lista]) => ({ mer, lista, c: contar(lista), sup: lista[0].sup }))
+  for (const r of rs) { const k = r[campo] || "Sin asignar"; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+  const grupos = [...m].map(([mer, lista]) => ({ mer, lista, c: contar(lista),
+    sup: campo === "mer" ? lista[0].sup : campo === "cad" ? [...new Set(lista.map(r => r.zon))].join(", ") : (n => `${n} ${n === 1 ? "cadena / cliente" : "cadenas / clientes"}`)(new Set(lista.map(r => r.cad)).size) }))
     // Los grupos sin persona real («Sin Alcance», «Sin asignar») van al final.
     .sort((a, b) => sinPersona(a.mer) - sinPersona(b.mer) || b.c.falta - a.c.falta || a.c.pct - b.c.pct || a.mer.localeCompare(b.mer, "es"));
   if (!grupos.length) return '<p class="empty">No hay nada con estos filtros.</p>';
   const filas = grupos.map(g => {
-    const abierto = st.abiertos.has(g.mer);
+    const llave = `${vista}:${g.mer}`;
+    const abierto = st.abiertos.has(llave);
     let det = "";
     if (abierto) {
       const faltan = g.lista.filter(falta).sort((a, b) => a.loc.localeCompare(b.loc, "es"));
       const subidos = g.lista.filter(subido).sort((a, b) => (b.e === "nov") - (a.e === "nov") || (b.f || "").localeCompare(a.f || ""));
       det = `<tr class="det"><td colspan="4"><div class="cols">
         <div><h3><span class="tag t-falta"><span class="ic">✕</span></span>Falta subir (${faltan.length})</h3>
-          ${faltan.length ? `<ul>${faltan.map(r => `<li>${nombreLocal(f, r)}</li>`).join("")}</ul>` : '<p class="vacio">Nada pendiente 🎉</p>'}</div>
+          ${faltan.length ? `<ul>${faltan.map(r => `<li>${nombreLocal(f, r)}${campo !== "mer" ? `<div class="sub">${esc(r.mer)}</div>` : ""}</li>`).join("")}</ul>` : '<p class="vacio">Nada pendiente 🎉</p>'}</div>
         <div><h3><span class="tag t-ok"><span class="ic">✓</span></span>Ya subió (${subidos.length})</h3>
           ${subidos.length ? `<ul>${subidos.map(r => `<li>${nombreLocal(f, r)}<div class="sub">${fdate(r.f)}${r.e === "nov" ? ' · <span class="tag t-nov">con novedad</span>' : ""}</div>${r.e === "nov" && r.nov[0] ? `<div class="nov-txt">${esc(r.nov[0])}${r.nov.length > 1 ? ` (+${r.nov.length - 1})` : ""}</div>` : ""}</li>`).join("")}</ul>` : '<p class="vacio">Todavía no ha subido nada.</p>'}</div>
       </div></td></tr>`;
     }
-    return `<tr class="persona${abierto ? " open" : ""}" data-mer="${esc(g.mer)}">
+    return `<tr class="persona${abierto ? " open" : ""}" data-mer="${esc(llave)}">
       <td><span class="caret">▸</span>${esc(g.mer)}<div class="sub" style="margin-left:14px">${esc(g.sup)}</div></td>
       <td class="n">${g.c.falta ? `<span class="falta-n">${fmt(g.c.falta)}</span>` : '<span class="cero">0</span>'}</td>
       <td class="n">${fmt(g.c.sub)}${g.c.nov ? `<div class="sub">${fmt(g.c.nov)} con novedad</div>` : ""}</td>
       <td class="n hide-sm"><span class="mini">${track(g.c)}</span>${g.c.pct}%</td></tr>${det}`;
   }).join("");
   return `<div class="tbl"><table>
-    <thead><tr><th>Mercaderista</th><th class="n">Falta subir</th><th class="n">Ya subió</th><th class="n hide-sm">Avance</th></tr></thead>
+    <thead><tr><th>${esc(nombre[0].toUpperCase() + nombre.slice(1))}</th><th class="n">Falta subir</th><th class="n">Ya subió</th><th class="n hide-sm">Avance</th></tr></thead>
     <tbody>${filas}</tbody></table></div>
-    <p class="sub" style="margin:10px 0 0">Toca un nombre para ver qué le falta y qué ya subió.</p>`;
+    <p class="sub" style="margin:10px 0 0">Toca una fila para ver qué falta y qué ya se subió.</p>`;
 }
 
 function porLocal(f, rs, c) {
@@ -959,7 +979,7 @@ function descargarEx(f) {
 document.addEventListener("change", ev => {
   const k = ev.target.dataset?.f; if (!k || k === "q") return;
   if (k === "dim") { st.dim = ev.target.value; st.abiertos.clear(); renderMain(D.formularios[st.tab]); return; }
-  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = ""; if (k === "can") st.cad = ""; }
+  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = ""; if (k === "can" || k === "zon") st.cad = ""; if (k === "can") st.zon = ""; }
   st.limit = 100; render();
 });
 let tq;
@@ -976,7 +996,7 @@ document.addEventListener("click", ev => {
   if ("ppt" in d) { armarPpt(); return; }
   if (d.grp) { st.abiertos.has(d.grp) ? st.abiertos.delete(d.grp) : st.abiertos.add(d.grp); renderMain(D.formularios[st.tab]); return; }
   if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
-  if (d.f === "clear") { st.acu = st.can = st.cad = st.sup = st.neg = st.cat = st.q = ""; render(); return; }
+  if (d.f === "clear") { for (const k of FILTROS) st[k] = ""; render(); return; }
   if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
   if ("mer" in d) { st.abiertos.has(d.mer) ? st.abiertos.delete(d.mer) : st.abiertos.add(d.mer); renderMain(D.formularios[st.tab]); return; }
   if (d.vista) { st.vista = d.vista; renderMain(D.formularios[st.tab]); return; }
@@ -991,8 +1011,9 @@ function descargar(f) {
   const est = r => r.e === "ok" ? "Subido" : r.e === "nov" ? "Subido con novedad" : "Falta subir";
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const per = f.periodos.find(p => p.id === st.per[f.key])?.label || "";
-  const cab = ["Periodo", "Estado", "Mercaderista", "Supervisor", "Local", "Código", "Cadena", ...(f.key === "ac" ? ["Acuerdo"] : []), "Negocio", "Categoría", "Fecha", "Novedad"];
-  const lineas = [cab.map(q).join(";")].concat(rs.map(r => [per, est(r), r.mer, r.sup, r.loc, r.id, r.cad, ...(f.key === "ac" ? [r.acu] : []), r.neg.join(", "), r.cat.join(", "), fdate(r.f), r.nov.join(" | ")].map(q).join(";")));
+  const canal = f.can_titulo ? [f.key === "pl" ? "Plan" : "Canal"] : [];
+  const cab = ["Periodo", "Estado", "Mercaderista", "Supervisor", "Zona", "Local", "Código", "Cadena / cliente", ...canal, ...(f.key === "ac" ? ["Acuerdo"] : []), "Negocio", "Categoría", "Fecha", "Subido por", "Novedad"];
+  const lineas = [cab.map(q).join(";")].concat(rs.map(r => [per, est(r), r.mer, r.sup, r.zon, r.loc, r.id, r.cad, ...(canal.length ? [r.can] : []), ...(f.key === "ac" ? [r.acu] : []), r.neg.join(", "), r.cat.join(", "), fdate(r.f), r.por, r.nov.join(" | ")].map(q).join(";")));
   bajar(lineas, `seguimiento_${f.key}_${st.per[f.key]}.csv`);
 }
 

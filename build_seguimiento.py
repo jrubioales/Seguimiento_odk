@@ -49,11 +49,16 @@ FORM_VIS = "seguimiento_muebles_alquilados_uiux_v4"
 FORM_AC = "acuerdos_comerciales"
 FORM_PR = "promociones_mercaderista"
 FORM_EX = "extravisibilidad_ganados_moderno"
+FORM_SOS = "sos_participacion_percha_moderno"
+FORM_PL = "planes_comerciales"
+FORM_CO = "check_outs"
+FORM_KB = "kbds"
 
 MESES_VIS = 2                      # meses que muestra visibilidad (el actual y el anterior)
 SEMANAS_PROMO = 4                  # semanas hacia atras que muestra promociones
 SEMANAS_AC = 8                     # semanas ISO hacia atras que muestra acuerdos
 SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
+MESES_MENS = 2                     # meses que muestran SOS, planes, check outs y KBDS
 MAX_DETALLE = 6                    # novedades listadas por registro
 FOTOS_RAMA = os.environ.get("FOTOS_RAMA", "fotos")  # rama del repo donde viven las fotos
 MINIATURA = 400                    # px del lado largo de la miniatura de la galeria
@@ -666,6 +671,219 @@ def armar_promociones(odk: Odk, personal: Personal, hoy: date) -> dict:
     }
 
 
+# --- encuestas mensuales (SOS, planes, check outs, KBDS) -------------------------
+#
+# Un registro por local cada mes calendario: el objetivo se reinicia el dia 1.
+# El universo es la lista de locales que trae el propio formulario, asi que si
+# cambia la lista en ODK la meta cambia sola.
+
+
+def zona_txt(v) -> str:
+    """``sierra_norte`` / ``SIERRA NORTE`` -> ``SIERRA NORTE``."""
+    return limpio(str(v or "").replace("_", " ")).upper()
+
+
+def meses_desde(hoy: date, n: int) -> tuple[date, list[str]]:
+    inicio = hoy.replace(day=1)
+    for _ in range(n - 1):
+        inicio = (inicio - timedelta(days=1)).replace(day=1)
+    meses, m = [], inicio
+    while m <= hoy:
+        meses.append(m.strftime("%Y-%m"))
+        m = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return inicio, meses
+
+
+def armar_mensual(odk: Odk, personal: Personal, hoy: date, asignado: dict[str, tuple[str, str]], *,
+                  form: str, titulo_: str, subtitulo: str, unidad: str, universo: list[dict],
+                  claves_reg, novedades, campo_local: str, campo_nombre: str,
+                  can_titulo: str = "") -> dict:
+    """``universo``: filas {k, id, loc, cad, zon, can, obj}; ``claves_reg(r)``: las k que cubre un registro."""
+    inicio, meses = meses_desde(hoy, MESES_MENS)
+    registros = odk.registros(form, desde=inicio - timedelta(days=1))
+    por: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    subio_local: dict[str, Counter] = defaultdict(Counter)
+    for r in registros:
+        f = fecha_de(r.get("fecha") or g(r, "__system/submissionDate"))
+        if not f:
+            continue
+        for k in claves_reg(r):
+            por[(k, f.strftime("%Y-%m"))].append(r)
+        subio_local[g(r, campo_local) or ""][titulo(g(r, "__system/submitterName"))] += 1
+    # Los meses antes del primer registro son de antes de que existiera la encuesta.
+    con_datos = {m for (_, m) in por}
+    meses = [m for m in meses if not con_datos or m >= min(con_datos)]
+
+    mes_hoy = hoy.strftime("%Y-%m")
+    filas = []
+    for u in universo:
+        mer, sup = asignado.get(u["id"], ("Sin asignar", "Sin asignar"))
+        if sup == "Sin asignar":
+            sup = personal.de("", u["id"], u["zon"])[1]
+        if mer == "Sin asignar" and subio_local.get(u["id"]):
+            mer = subio_local[u["id"]].most_common(1)[0][0]
+        for mes in meses:
+            regs = sorted(por.get((u["k"], mes), []), key=lambda r: g(r, "__system/submissionDate") or "")
+            ultimo = regs[-1] if regs else None
+            novs = novedades(ultimo) if ultimo else []
+            filas.append({
+                "p": mes, "id": u["id"], "loc": u["loc"], "cad": u["cad"], "zon": u["zon"],
+                "can": u.get("can", ""), "sup": sup, "mer": mer, "neg": [], "cat": [],
+                "obj": u.get("obj", ""),
+                "e": estado(bool(ultimo), bool(novs), mes == mes_hoy),
+                "f": str(ultimo.get("fecha") or g(ultimo, "__system/submissionDate") or "")[:10] if ultimo else "",
+                "por": titulo(g(ultimo, "__system/submitterName")) if ultimo else "",
+                "n": len(regs),
+                "nov": novs[:MAX_DETALLE],
+            })
+
+    claves = {u["k"] for u in universo}
+    extra = [r for r in registros if not set(claves_reg(r)) & claves]
+    return {
+        "titulo": titulo_,
+        "subtitulo": subtitulo,
+        "unidad": unidad,
+        "can_titulo": can_titulo,
+        "periodos": [{"id": m, "label": etiqueta_mes(m)} for m in meses][::-1],
+        "periodo_tipo": "mes",
+        "filas": filas,
+        "fuera": fuera_de_lista(extra, campo_local, campo_nombre, "fecha"),
+        "registros": len(registros),
+    }
+
+
+def con_ciudad(nombre, ciudad) -> str:
+    nombre, ciudad = limpio(nombre), limpio(ciudad)
+    return f"{nombre} · {ciudad.title()}" if ciudad and ciudad.upper() not in nombre.upper() else nombre
+
+
+def armar_sos(odk: Odk, personal: Personal, hoy: date, asignado) -> dict:
+    universo = [{"k": u["llave"], "id": u["llave"], "loc": con_ciudad(u.get("local_nombre"), u.get("ciudad")),
+                 "cad": limpio(u.get("cadena_nombre")), "zon": zona_txt(u.get("zona")), "obj": limpio(u.get("formato"))}
+                for u in odk.lista(FORM_SOS, "tiendas_moderno_1008.csv")]
+    motivos = {k: v["label"] for k, v in opciones_xml(odk.xml(FORM_SOS), "motivos_sin_categoria").items()}
+
+    def novs(r):
+        out = []
+        if g(r, "sos_posible/puede_sos") == "no":
+            m = limpio(g(r, "no_se_pudo/motivo_no_sos"))
+            out.append("No se pudo medir la percha" + (f": {m}" if m else ""))
+        if (m := limpio(g(r, "faltantes/faltantes_motivo"))):
+            n = num(r.get("n_faltan"))
+            out.append(f"{n or 'Hay'} categoría(s) que ya no están en la tienda: " + ", ".join(motivos.get(x, x) for x in m.split()))
+        if (faltan := fotos_incompletas(r)):
+            out.append(f"{faltan} foto(s) sin terminar de subir al servidor")
+        return out
+
+    return armar_mensual(odk, personal, hoy, asignado, form=FORM_SOS, titulo_="SOS percha",
+                         subtitulo="Participación en percha · moderno · un registro por local cada mes",
+                         unidad="locales", universo=universo,
+                         claves_reg=lambda r: [g(r, "buscar_tienda/local_id") or ""], novedades=novs,
+                         campo_local="buscar_tienda/local_id", campo_nombre="local_datos/local_nombre")
+
+
+PLANES = {"ninja": ("plan_n", "Plan Ninja"), "diamante": ("plan_d", "Plan Aliado Diamante")}
+
+
+def armar_planes(odk: Odk, personal: Personal, hoy: date, asignado) -> dict:
+    universo = []
+    for u in odk.lista(FORM_PL, "locales_planes_1028.csv"):
+        for plan, (col, nombre) in PLANES.items():
+            if u.get(col) == "1":
+                universo.append({"k": f"{u['llave']}|{plan}", "id": u["llave"],
+                                 "loc": con_ciudad(u.get("pdv"), u.get("ciudad")), "cad": limpio(u.get("cliente")),
+                                 "zon": zona_txt(u.get("zona_nom") or u.get("zona")), "can": nombre,
+                                 "obj": limpio(u.get("formato"))})
+    motivos = {k: v["label"] for k, v in opciones_xml(odk.xml(FORM_PL), "motivos_sin_girasol").items()}
+
+    def novs(r):
+        out = []
+        if g(r, "disponibilidad/hay_girasol") == "no":
+            m = g(r, "sin_girasol/sin_girasol_motivo")
+            det = limpio(g(r, "sin_girasol/sin_girasol_detalle"))
+            out.append("Sin aceite de girasol" + (f": {motivos.get(m, m)}" if m else "") + (f" — {det}" if det else ""))
+        if (faltan := fotos_incompletas(r)):
+            out.append(f"{faltan} foto(s) sin terminar de subir al servidor")
+        return out
+
+    def claves(r):
+        loc = g(r, "datos_local/local_id") or ""
+        return [f"{loc}|{p}" for p in (g(r, "plan_grp/plan") or "").split()]
+
+    return armar_mensual(odk, personal, hoy, asignado, form=FORM_PL, titulo_="Planes comerciales",
+                         subtitulo="Plan Ninja y Plan Aliado Diamante · un registro por local y plan cada mes",
+                         unidad="locales × plan", universo=universo, claves_reg=claves, novedades=novs,
+                         campo_local="datos_local/local_id", campo_nombre="datos_local/local_nombre",
+                         can_titulo="Todos los planes")
+
+
+def armar_checkouts(odk: Odk, personal: Personal, hoy: date, asignado) -> dict:
+    xml = odk.xml(FORM_CO)
+    zonas = {k: v["label"] for k, v in opciones_xml(xml, "zonas").items()}
+    canales = {"farma": "Farmacias", "gas": "Gasolineras"}
+    universo = [{"k": u["name"], "id": u["name"], "loc": limpio(u.get("label")), "cad": limpio(u.get("cliente")),
+                 "zon": zona_txt(zonas.get(u.get("zona"), u.get("zona"))),
+                 "can": canales.get(u.get("canal"), limpio(u.get("canal"))),
+                 "obj": "Con percha" if u.get("percha") == "1" else ""}
+                for u in odk.lista(FORM_CO, "locales_checkouts.csv")]
+
+    def novs(r):
+        out = []
+        if g(r, "farma_mod_grp/modulos") == "ninguno":
+            out.append("No tiene check out")
+        if (faltan := fotos_incompletas(r)):
+            out.append(f"{faltan} foto(s) sin terminar de subir al servidor")
+        return out
+
+    return armar_mensual(odk, personal, hoy, asignado, form=FORM_CO, titulo_="Check outs",
+                         subtitulo="Farmacias y gasolineras · un registro por local cada mes",
+                         unidad="locales", universo=universo,
+                         claves_reg=lambda r: [g(r, "datos_local/local_id") or ""], novedades=novs,
+                         campo_local="datos_local/local_id", campo_nombre="local_nombre",
+                         can_titulo="Todos los canales")
+
+
+def armar_kbds(odk: Odk, personal: Personal, hoy: date, asignado) -> dict:
+    universo = [{"k": u["llave"], "id": u["llave"], "loc": con_ciudad(u.get("pdv"), u.get("ciudad")),
+                 "cad": limpio(u.get("cadena")), "zon": zona_txt(u.get("zona_nom") or u.get("zona")),
+                 "obj": " · ".join(x for x in (limpio(u.get("formato")), limpio(u.get("cluster"))) if x)}
+                for u in odk.lista(FORM_KB, "locales_kbds.csv")]
+    motivos = {k: v["label"] for k, v in opciones_xml(odk.xml(FORM_KB), "motivos_no").items()}
+
+    def novs(r):
+        out = []
+        if g(r, "levantar_grp/puede_levantar") == "no":
+            m = g(r, "levantar_grp/motivo_no")
+            otro = limpio(g(r, "levantar_grp/motivo_otro"))
+            out.append("No se pudo levantar" + (f": {motivos.get(m, m)}" if m else "") + (f" — {otro}" if otro else ""))
+        if (faltan := fotos_incompletas(r)):
+            out.append(f"{faltan} foto(s) sin terminar de subir al servidor")
+        return out
+
+    return armar_mensual(odk, personal, hoy, asignado, form=FORM_KB, titulo_="KBDS",
+                         subtitulo="Moderno · un registro por local cada mes",
+                         unidad="locales", universo=universo,
+                         claves_reg=lambda r: [g(r, "datos_local/local_id") or ""], novedades=novs,
+                         campo_local="datos_local/local_id", campo_nombre="datos_local/local_nombre")
+
+
+def asignacion(*formularios: dict) -> dict[str, tuple[str, str]]:
+    """Codigo de local -> (mercaderista, supervisor) segun las pestañas que ya los conocen."""
+    out: dict[str, tuple[str, str]] = {}
+    for f in formularios:
+        actual = f["periodos"][0]["id"] if f.get("periodos") else None
+        for r in f["filas"]:
+            if r.get("p") != actual:
+                continue
+            mer, sup = out.get(r["id"], ("Sin asignar", "Sin asignar"))
+            if mer == "Sin asignar" and r["mer"] and not r["mer"].startswith("Sin "):
+                mer = r["mer"]
+            if sup == "Sin asignar" and r["sup"] and not r["sup"].startswith("Sin "):
+                sup = r["sup"]
+            out[r["id"]] = (mer, sup)
+    return out
+
+
 # --- exhibiciones ganadas -------------------------------------------------------
 #
 # Cada exhibicion ganada es una entidad de ganadas_moderno: se crea al ganarla
@@ -994,11 +1212,15 @@ def main() -> None:
     vi = armar_visibilidad(odk, personal, hoy)
     clave = os.environ.get("SEGUIMIENTO_CLAVE")
     ex = armar_exhibiciones(odk, personal, hoy, clave, con_fotos=not args.sin_fotos)
+    asig = asignacion(pr, vi, ac)
+    mensuales = {}
+    for k, armar in (("sos", armar_sos), ("pl", armar_planes), ("co", armar_checkouts), ("kb", armar_kbds)):
+        mensuales[k] = armar(odk, personal, hoy, asig)
 
     datos = {
         "actualizado": ahora.isoformat(timespec="minutes"),
         "hoy": hoy.isoformat(),
-        "formularios": {"vis": vi, "ac": ac, "pr": pr, "ex": ex},
+        "formularios": {"vis": vi, "ac": ac, "pr": pr, "ex": ex, **mensuales},
     }
     texto = json.dumps(datos, ensure_ascii=False, separators=(",", ":"))
     carga = {"cifrado": cifrar(texto, clave)} if clave else {"plano": datos}
