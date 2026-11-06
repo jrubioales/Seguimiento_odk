@@ -43,37 +43,55 @@
   --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
   --ok-ink: #0ca30c; --nov-ink: #fab219; --track: #2c2c2a;
 }
-/* Avance por zona (solo SOS, planes, check outs y KBDS) */
-.zonas-card h2 { margin: 0; font-size: 16px; }
-.zleg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
-.zleg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-.zleg .l-falta { background: var(--track); outline: 1px dashed var(--muted); outline-offset: -1px; }
-.zchart { display: grid; grid-template-columns: repeat(var(--n), minmax(84px, 1fr)); gap: 8px; overflow-x: auto; padding: 4px 2px 2px; margin-top: 14px; }
-.zcol { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 300px;
-  border: 0; background: none; padding: 0; cursor: pointer; border-radius: 8px; }
-.zcol:hover, .zcol:focus-visible { background: var(--surface-2); outline: none; }
-.zchart.sel .zcol:not(.on) { opacity: .42; }
-.zpct { font-size: 18px; font-weight: 700; line-height: 1.1; }
-.zxy { font-size: 12px; color: var(--ink-2); }
-.zfal { font-size: 12px; color: var(--falta); font-weight: 600; margin-bottom: 6px; }
-.zfal.cero { color: var(--ok-ink); }
-.zbar { width: min(58px, 72%); background: var(--track); border-radius: 4px 4px 0 0; display: flex; flex-direction: column-reverse; gap: 2px; overflow: hidden;
-  box-shadow: inset 0 0 0 1px var(--grid); }
-.zbar .s-ok { background: var(--ok); }
-.zbar .s-nov { background: var(--nov); }
-.znom { width: 100%; border-top: 1px solid var(--ink-2); padding: 6px 2px 4px; font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; min-height: 40px; }
-.zcol.on .znom { color: var(--accent); }
-.ztip { display: none; position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2; min-width: 150px; text-align: left;
-  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
-.ztip b { display: block; font-size: 13px; }
-.ztip .r { display: flex; justify-content: space-between; gap: 12px; }
-.ztip .r span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
-.zcol:hover .ztip, .zcol:focus-visible .ztip { display: block; }
+/* SOS, planes, check outs y KBDS: tarjetas y mini pestañas Avance / Faltantes */
+.mref { --m-ok: #1e8e3e; --m-falta: #d93025; --m-medio: #e8a33d; --m-azul: #1a73e8; --m-pista: #eef1f4; --m-cab: #fafbfc; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .mref { --m-ok: #34a853; --m-azul: #3987e5; --m-pista: #2c2c2a; --m-cab: #232321; } }
+:root[data-theme="dark"] .mref { --m-ok: #34a853; --m-azul: #3987e5; --m-pista: #2c2c2a; --m-cab: #232321; }
+.m-tarjetas { display: grid; gap: 10px; margin: 14px 0; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.m-t { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 12px 14px; }
+.m-t b { display: block; font-size: 28px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.m-t span { color: var(--ink-2); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+.m-t.ok b { color: var(--m-ok); } .m-t.falta b { color: var(--m-falta); } .m-t.medio b { color: var(--m-medio); } .m-t.azul b { color: var(--m-azul); }
+.m-nav { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--grid); margin: 18px 0 0; }
+.m-nav button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 9px 14px; font-weight: 600; color: var(--ink-2); cursor: pointer; margin-bottom: -2px; }
+.m-nav button.on { color: var(--m-azul); border-bottom-color: var(--m-azul); }
+.m-sec { padding: 18px 0 0; }
+.m-caja { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.m-caja h2 { font-size: 15px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .5px; color: var(--ink-2); }
+.m-caja p.nota { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; }
+.m-barra { display: grid; grid-template-columns: 170px 1fr 124px; gap: 10px; align-items: center; padding: 4px 6px; width: 100%;
+  border: 0; background: none; border-radius: 6px; text-align: left; cursor: pointer; }
+.m-barra:hover, .m-barra:focus-visible { background: var(--m-cab); outline: none; }
+.m-barra .nom { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-pista { background: var(--m-pista); border-radius: 5px; height: 20px; overflow: hidden; display: flex; gap: 2px; }
+.m-pista i { display: block; height: 100%; }
+.m-pista i.s { background: var(--m-ok); } .m-pista i.n { background: var(--m-medio); }
+.m-barra .cif { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.m-barra .cif b { color: var(--ink); }
+.m-mandos { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.m-mandos select, .m-mandos input { padding: 7px 10px; border: 1px solid var(--grid); border-radius: 7px; background: var(--surface); }
+.m-mandos input[type=text] { min-width: 190px; }
+.m-sello { color: var(--ink-2); font-size: 13px; }
+.m-btn { font-weight: 600; padding: 8px 14px; border-radius: 7px; border: 1px solid var(--m-azul); background: var(--m-azul); color: #fff; cursor: pointer; }
+.m-btn.claro { background: var(--surface); color: var(--m-azul); }
+.m-btn.wa { background: #25d366; border-color: #1eb257; color: #fff; }
+.m-scroll { max-height: 560px; overflow: auto; border: 1px solid var(--grid); border-radius: 8px; }
+.m-scroll table { width: 100%; min-width: 820px; border-collapse: collapse; font-size: 13px; }
+.m-scroll th, .m-scroll td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+.m-scroll th { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--ink-2); background: var(--m-cab);
+  position: sticky; top: 0; cursor: pointer; user-select: none; white-space: nowrap; }
+.m-scroll tbody tr:hover { background: var(--m-cab); }
+.m-vacio { color: var(--ink-2); padding: 26px; text-align: center; }
+.m-pil { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.m-pil.subida { background: #e4f3e7; color: #15692f; }
+.m-pil.falta { background: #fde9e7; color: #b3261e; }
+.m-pil.nov { background: #fdf2e0; color: #8a5a00; }
+.m-nov { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+#mLienzo canvas { max-width: 100%; border: 1px solid var(--grid); border-radius: 8px; margin-top: 12px; }
 @media (max-width: 600px) {
-  .zchart { grid-template-columns: repeat(var(--n), minmax(66px, 1fr)); gap: 4px; }
-  .zcol { height: 270px; }
-  .zpct { font-size: 16px; }
-  .znom { font-size: 11px; }
+  .m-barra { grid-template-columns: 104px 1fr 96px; gap: 6px; }
+  .m-t b { font-size: 22px; }
+  .m-mandos input[type=text] { min-width: 0; flex: 1; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -460,7 +478,16 @@ function renderFiltros(f) {
   const base = filasBase(f);
   const uniq = (rs, k) => [...new Set(rs.flatMap(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
-  // Un filtro elegido en otra pestaña que aquí no existe se suelta.
+  // Las encuestas mensuales llevan sus filtros dentro de la mini pestaña Faltantes.
+  const mens = MENSUALES.includes(f.key);
+  $("#filters").style.display = mens ? "none" : "";
+  if (mens) {
+    for (const k of ["acu", "sup", "neg", "cat"]) st[k] = "";
+    if (!f.can_titulo || !uniq(base, "can").includes(st.can)) st.can = "";
+    if (!uniq(base, "zon").includes(st.zon)) st.zon = "";
+    if (!uniq(base, "cad").includes(st.cad)) st.cad = "";
+    return;
+  }
   const ex = f.key === "ex";
   // Un filtro elegido en otra pestaña que aquí no existe se suelta.
   const propios = f.key === "ac" ? ["acu"] : [];
@@ -490,6 +517,7 @@ function filasBase(f) { const g = {}; for (const k of FILTROS) { g[k] = st[k]; s
 
 function renderMain(f) {
   if (f.key === "ex") return renderEx(f);
+  if (MENSUALES.includes(f.key)) return renderMensual(f);
   const rs = filasPeriodo(f);
   const c = contar(rs);
   const unidad = f.key === "ac" ? "acuerdos" : f.unidad || "locales";
@@ -505,7 +533,7 @@ function renderMain(f) {
   const grp = GRUPOS.find(([k]) => k === st.vista);
   const cuerpo = grp ? porGrupo(f, rs, grp) : porLocal(f, rs, c);
   const btn = (k, t) => `<button type="button" data-vista="${k}" aria-pressed="${st.vista === k}">${t}</button>`;
-  $("#main").innerHTML = franjaPeriodos(f) + avance + (MENSUALES.includes(f.key) ? graficoZonas(f) : "") + `<section class="card">
+  $("#main").innerHTML = franjaPeriodos(f) + avance + `<section class="card">
     <div class="card-head">
       <h2>¿Qué falta subir?</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -534,39 +562,210 @@ function franjaPeriodos(f) {
 
 const sinPersona = n => /^sin (alcance|asignar)/i.test(n) ? 1 : 0;
 
-// Avance por zona en barras: la altura es el objetivo de la zona y el relleno
-// lo subido. Solo en las encuestas mensuales; tocar una barra filtra la zona.
+/* ---------- SOS, planes, check outs y KBDS ---------- */
+// Tarjetas de resumen y dos mini pestañas: Avance (barras por zona, cadena y
+// plan o canal) y Faltantes (lista filtrable para mandar al grupo).
 const MENSUALES = ["sos", "pl", "co", "kb"];
-const ORDEN_ZONAS = ["QUITO", "SIERRA NORTE", "SIERRA CENTRO", "AUSTRO", "COSTA NORTE", "COSTA CENTRO", "GUAYAQUIL NORTE", "GUAYAQUIL SUR"];
+const PIL_M = { ok: ["subida", "Subido"], nov: ["nov", "Con novedad"], pen: ["falta", "Falta"], no: ["falta", "No subió"] };
+const ESTADOS_M = [["falta", "Solo faltantes"], ["", "Todos"], ["subida", "Solo subidos"], ["nov", "Con novedad"]];
+const canNombre = f => f.key === "pl" ? "plan" : "canal";
+const cadNombre = f => f.key === "pl" || f.key === "co" ? "cliente" : "cadena";
+const colsM = f => [["id", "Código"], ["loc", "Local"], ["cad", cadNombre(f)], ...(f.can_titulo ? [["can", canNombre(f)]] : []),
+  ["obj", f.key === "co" ? "Percha" : "Formato"], ["zon", "Zona"], ["e", "Estado"], ["f", "Visita"], ["mer", "Quién"]];
+const horaDatos = () => new Date(D.actualizado).toLocaleString("es-EC", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const periodoM = f => f.periodos.find(p => p.id === st.per[f.key])?.label || "";
 
-function graficoZonas(f) {
-  const zon = st.zon; st.zon = ""; const rs = filasPeriodo(f); st.zon = zon;
+// Corre fn sin los filtros de Faltantes (las tarjetas y Avance son del mes completo).
+function sinFiltros(fn) { const g = {}; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } try { return fn(); } finally { Object.assign(st, g); } }
+
+function agrupar(rs, campo) {
   const m = new Map();
-  for (const r of rs) { const k = r.zon || "Sin zona"; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
-  const pos = z => { const i = ORDEN_ZONAS.indexOf(z); return i < 0 ? 99 : i; };
-  const zonas = [...m].map(([z, l]) => ({ z, c: contar(l) })).sort((a, b) => pos(a.z) - pos(b.z) || a.z.localeCompare(b.z, "es"));
-  if (!zonas.length) return "";
-  const max = Math.max(...zonas.map(x => x.c.tot));
-  const ALTO = 190;  // px de la barra de la zona con el objetivo más grande
-  const cols = zonas.map(({ z, c }) => {
-    const h = Math.max(8, Math.round(ALTO * c.tot / max));
-    const seg = (n, cls) => n ? `<i class="${cls}" style="height:${(100 * n / c.tot).toFixed(2)}%"></i>` : "";
-    const fila = (t, v) => `<div class="r"><span>${t}</span><span>${v}</span></div>`;
-    return `<button type="button" class="zcol${zon === z ? " on" : ""}" data-zona="${esc(z)}" aria-label="${esc(z)}: ${c.sub} de ${c.tot}, faltan ${c.falta}">
-      <div class="ztip"><b>${esc(z)}</b>${fila("Objetivo", fmt(c.tot))}${fila("Subido", fmt(c.ok))}${c.nov ? fila("Con novedad", fmt(c.nov)) : ""}${fila("Faltan", fmt(c.falta))}${fila("Avance", c.pct + "%")}</div>
-      <div class="zpct">${c.pct}%</div>
-      <div class="zxy">${fmt(c.sub)} de ${fmt(c.tot)}</div>
-      <div class="zfal${c.falta ? "" : " cero"}">${c.falta ? `faltan ${fmt(c.falta)}` : "✓ completo"}</div>
-      <div class="zbar" style="height:${h}px">${seg(c.ok, "s-ok")}${seg(c.nov, "s-nov")}</div>
-      <div class="znom">${esc(z)}</div></button>`;
-  }).join("");
-  return `<section class="card zonas-card">
-    <div class="card-head" style="margin:0"><h2>Avance por zona · objetivo del mes</h2>
-      <div class="zleg"><span><i style="background:var(--ok)"></i>Subido</span><span><i style="background:var(--nov)"></i>Con novedad</span><span><i class="l-falta"></i>Falta para el objetivo</span></div></div>
-    <div class="zchart${zon ? " sel" : ""}" style="--n:${zonas.length}">${cols}</div>
-    <p class="sub" style="margin:8px 0 0">La altura de cada barra es el objetivo de la zona. ${zon ? `Mostrando solo <b>${esc(zon)}</b>; toca la barra otra vez para ver todas.` : "Toca una zona para filtrarla."}</p>
-  </section>`;
+  for (const r of rs) { const k = r[campo] || "Sin asignar"; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+  return m;
 }
+
+function filasFaltantes(f) {
+  const q = norm(st.q).trim();
+  const est = st.mEst ?? "falta";
+  const pasa = { falta, subida: r => r.e === "ok", nov: r => r.e === "nov" }[est] || (() => true);
+  const o = st.mOrd || { c: "zon", asc: true };
+  const val = r => o.c === "e" ? PIL_M[r.e]?.[1] : o.c === "mer" ? (r.por || r.mer) : r[o.c];
+  return filasBase(f).filter(r => (!st.zon || r.zon === st.zon) && (!st.cad || r.cad === st.cad) && (!st.can || r.can === st.can) &&
+      pasa(r) && (!q || r._q.includes(q)))
+    .sort((a, b) => (o.asc ? 1 : -1) * String(val(a) || "").localeCompare(String(val(b) || ""), "es", { numeric: true }) || a.loc.localeCompare(b.loc, "es"));
+}
+
+function barrasM(rs, campo) {
+  return [...agrupar(rs, campo)].map(([k, l]) => ({ k, c: contar(l) }))
+    .sort((a, b) => b.c.pct - a.c.pct || b.c.tot - a.c.tot || a.k.localeCompare(b.k, "es"))
+    .map(({ k, c }) => `<button type="button" class="m-barra" data-mir="${campo}" data-val="${esc(k)}" title="${esc(k)}: ${fmt(c.sub)} de ${fmt(c.tot)} · faltan ${fmt(c.falta)}. Toca para ver lo que falta.">
+      <span class="nom">${esc(k)}</span>
+      <span class="m-pista">${c.ok ? `<i class="s" style="width:${(100 * c.ok / c.tot).toFixed(2)}%"></i>` : ""}${c.nov ? `<i class="n" style="width:${(100 * c.nov / c.tot).toFixed(2)}%"></i>` : ""}</span>
+      <span class="cif"><b>${fmt(c.sub)}</b>/${fmt(c.tot)} · ${c.pct}%</span></button>`).join("");
+}
+
+function renderMensual(f) {
+  st.mSub = st.mSub || "avance";
+  const rs = filasBase(f), c = contar(rs);
+  const tarjetas = [["azul", fmt(c.tot), "Objetivo"], ["ok", fmt(c.ok), "Subidos"], ["medio", fmt(c.nov), "Con novedad"],
+    ["falta", fmt(c.falta), "Faltan"], ["azul", (c.tot ? (100 * c.sub / c.tot).toFixed(1) : "0.0") + "%", "Avance"]]
+    .map(([k, v, t]) => `<div class="m-t ${k}"><b>${v}</b><span>${t}</span></div>`).join("");
+  const nav = [["avance", "Avance"], ["faltantes", "Faltantes"]]
+    .map(([k, t]) => `<button type="button" data-msub="${k}" class="${st.mSub === k ? "on" : ""}">${t}</button>`).join("");
+  const nota = "Verde: subidos. Ámbar: subidos con novedad. Toca una barra para ver lo que falta.";
+  const caja = (titulo, txt, campo) => `<div class="m-caja"><h2>${titulo}</h2><p class="nota">${txt}</p>${barrasM(rs, campo)}</div>`;
+  let cuerpo;
+  if (st.mSub === "avance") {
+    cuerpo = (f.can_titulo ? caja(`Avance por ${canNombre(f)}`, nota, "can") : "") +
+      caja("Avance por zona", nota, "zon") + caja(`Avance por ${cadNombre(f)}`, f.can_titulo ? "Toca una barra para ver lo que falta." : nota, "cad");
+  } else {
+    const uniq = (xs, k) => [...new Set(xs.map(r => r[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+    const opt = (lista, actual, todos) => `<option value="">${todos}</option>` + lista.map(v => `<option${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("");
+    const deCan = rs.filter(r => !st.can || r.can === st.can);
+    const o = st.mOrd || { c: "zon", asc: true };
+    const est = st.mEst ?? "falta";
+    cuerpo = `<div class="m-caja"><h2>${est === "falta" ? "Locales que faltan" : "Locales"}</h2>
+      <div class="m-mandos">
+        ${f.can_titulo ? `<select data-m="can" aria-label="${canNombre(f)}">${opt(uniq(rs, "can"), st.can, f.can_titulo)}</select>` : ""}
+        <select data-m="zon" aria-label="Zona">${opt(uniq(deCan, "zon"), st.zon, "Todas las zonas")}</select>
+        <select data-m="cad" aria-label="${cadNombre(f)}">${opt(uniq(deCan.filter(r => !st.zon || r.zon === st.zon), "cad"), st.cad, f.key === "pl" || f.key === "co" ? "Todos los clientes" : "Todas las cadenas")}</select>
+        <select data-m="est" aria-label="Estado">${ESTADOS_M.map(([k, t]) => `<option value="${k}"${k === est ? " selected" : ""}>${t}</option>`).join("")}</select>
+        <input type="text" data-m="q" placeholder="Buscar local, código o mercaderista…" value="${esc(st.q)}">
+        <span class="m-sello" id="mCuenta"></span>
+      </div>
+      <div class="m-mandos">
+        <button class="m-btn claro" type="button" data-macc="img">🖼️ Generar imagen de la lista</button>
+        <input type="tel" id="mWa" placeholder="593991234567" size="15" value="${esc(store("seg-wa") || "")}">
+        <button class="m-btn wa" type="button" data-macc="wa">Enviar por WhatsApp</button>
+        <button class="m-btn claro" type="button" data-macc="copiar">Copiar lista</button>
+        <button class="m-btn claro" type="button" data-csv>Descargar Excel</button>
+      </div>
+      <div class="m-scroll"><table><thead><tr>${colsM(f).map(([k, t]) => `<th data-mord="${k}">${esc(t)}${o.c === k ? (o.asc ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead>
+        <tbody id="mCuerpo"></tbody></table></div>
+      <div id="mLienzo"></div></div>`;
+  }
+  $("#main").innerHTML = sinFiltros(() => franjaPeriodos(f)) + `<div class="mref">
+    <div class="m-tarjetas">${tarjetas}</div>
+    <nav class="m-nav" aria-label="Vista">${nav}</nav>
+    <section class="m-sec">${cuerpo}</section></div>`;
+  if (st.mSub === "faltantes") pintarFaltantes(f, rs.length);
+}
+
+function pintarFaltantes(f, total) {
+  const rs = filasFaltantes(f);
+  $("#mCuenta").textContent = `${fmt(rs.length)} de ${fmt(total ?? filasBase(f).length)}`;
+  const n = colsM(f).length;
+  $("#mCuerpo").innerHTML = rs.length ? rs.map(r => { const [cls, txt] = PIL_M[r.e] || ["falta", "Falta"]; return `<tr>
+    <td>${esc(r.id)}</td><td>${esc(r.loc)}</td><td>${esc(r.cad)}</td>${f.can_titulo ? `<td>${esc(r.can)}</td>` : ""}
+    <td>${esc(r.obj)}</td><td style="white-space:nowrap">${esc(r.zon)}</td>
+    <td><span class="m-pil ${cls}">${txt}</span>${r.e === "nov" ? r.nov.map(x => `<div class="m-nov">${esc(x)}</div>`).join("") : ""}</td>
+    <td>${fdate(r.f) || "—"}</td><td>${esc(r.por || r.mer)}</td></tr>`; }).join("")
+    : `<tr><td colspan="${n}" class="m-vacio">Nada con esos filtros.</td></tr>`;
+}
+
+// Lista agrupada por zona, para copiar o mandar por WhatsApp.
+function textoFaltantes(f) {
+  const rs = filasFaltantes(f);
+  const falt = (st.mEst ?? "falta") === "falta";
+  const extra = [st.can, st.cad].filter(Boolean).join(" · ");
+  let out = `*${falt ? "Locales que faltan subir" : "Locales"} · ${st.zon || "todas las zonas"}*\n_${f.titulo}${extra ? " · " + extra : ""} · ${periodoM(f)} · datos al ${horaDatos()}_\n`;
+  for (const [z, l] of [...agrupar(rs, "zon")].sort((a, b) => a[0].localeCompare(b[0], "es"))) {
+    out += `\n*${z}* (${l.length})\n`;
+    for (const r of l) out += `• ${r.loc} — ${r.cad}\n`;
+  }
+  return out + `\nTotal: ${rs.length} locales.`;
+}
+
+// Imagen de la lista dibujada en un canvas, para mandar al grupo.
+function imagenFaltantes(f) {
+  const rs = filasFaltantes(f);
+  if (!rs.length) { alert("No hay locales con esos filtros."); return; }
+  const grupos = [...agrupar(rs, "zon")].sort((a, b) => a[0].localeCompare(b[0], "es"));
+  const AN = 900, PAD = 34, LH = 26;
+  let alto = PAD * 2 + 86 + 34;
+  for (const [, l] of grupos) alto += 38 + l.length * LH;
+  const cv = document.createElement("canvas");
+  const k = window.devicePixelRatio > 1 ? 2 : 1;
+  cv.width = AN * k; cv.height = alto * k; cv.style.width = AN + "px";
+  const g = cv.getContext("2d");
+  g.scale(k, k);
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, AN, alto);
+  g.fillStyle = "#1a73e8"; g.fillRect(0, 0, AN, 6);
+  const fuente = (peso, px) => `${peso} ${px}px Segoe UI, system-ui, sans-serif`;
+  const corta = (t, ancho) => { let s = String(t || ""); if (g.measureText(s).width <= ancho) return s; while (s.length > 3 && g.measureText(s + "…").width > ancho) s = s.slice(0, -1); return s.replace(/[ (,·-]+$/, "") + "…"; };
+  let y = PAD + 20;
+  g.fillStyle = "#14181d"; g.font = fuente(700, 25);
+  g.fillText(((st.mEst ?? "falta") === "falta" ? "Locales que faltan subir" : "Locales") + (st.zon ? " · " + st.zon : ""), PAD, y);
+  y += 26;
+  g.fillStyle = "#5f6872"; g.font = fuente(400, 14);
+  const total = sinFiltros(() => filasBase(f).length);
+  g.fillText(corta(`${f.titulo}${st.can ? " · " + st.can : ""}${st.cad ? " · " + st.cad : ""} · ${periodoM(f)} · datos al ${horaDatos()} · ${rs.length} de ${total} del objetivo`, AN - 2 * PAD), PAD, y);
+  y += 30;
+  for (const [z, l] of grupos) {
+    g.fillStyle = "#f5f7f9"; g.fillRect(PAD - 10, y - 4, AN - 2 * (PAD - 10), 26);
+    g.fillStyle = "#1a73e8"; g.font = fuente(700, 15);
+    g.fillText(`${z}  (${l.length})`, PAD, y + 14);
+    y += 36;
+    g.font = fuente(400, 14);
+    for (const r of l) {
+      g.fillStyle = "#9aa3ad"; g.fillText("•", PAD + 4, y + 13);
+      g.fillStyle = "#14181d"; g.fillText(corta(r.loc, AN - 2 * PAD - 330), PAD + 20, y + 13);
+      g.fillStyle = "#5f6872"; g.fillText(corta(r.cad, 190), AN - PAD - 290, y + 13);
+      g.fillStyle = "#9aa3ad"; g.fillText(corta(r.id, 80), AN - PAD - 80, y + 13);
+      y += LH;
+    }
+  }
+  g.fillStyle = "#9aa3ad"; g.font = fuente(400, 12);
+  g.fillText("Industrias Ales · generado desde el tablero de seguimiento", PAD, alto - PAD + 8);
+  const caja = $("#mLienzo");
+  caja.innerHTML = "";
+  caja.appendChild(cv);
+  const b = document.createElement("button");
+  b.className = "m-btn"; b.type = "button"; b.style.marginTop = "10px"; b.textContent = "⬇️ Descargar la imagen";
+  b.onclick = () => cv.toBlob(blob => {
+    const u = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = u; a.download = `Faltantes-${f.titulo}${st.zon ? "-" + st.zon : ""}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 10000);
+  }, "image/png");
+  caja.appendChild(document.createElement("br"));
+  caja.appendChild(b);
+  cv.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+document.addEventListener("change", ev => {
+  const k = ev.target.dataset?.m; if (!k || k === "q") return;
+  const f = D.formularios[st.tab];
+  if (k === "est") st.mEst = ev.target.value;
+  else { st[k] = ev.target.value; if (k === "can") st.zon = st.cad = ""; if (k === "zon") st.cad = ""; }
+  renderMain(f);
+});
+let tqM;
+document.addEventListener("input", ev => {
+  if (ev.target.dataset?.m !== "q") return;
+  clearTimeout(tqM); tqM = setTimeout(() => { st.q = ev.target.value; pintarFaltantes(D.formularios[st.tab]); }, 200);
+});
+document.addEventListener("click", async ev => {
+  const t = ev.target.closest("[data-msub],[data-mir],[data-mord],[data-macc]"); if (!t) return;
+  const f = D.formularios[st.tab], d = t.dataset;
+  if (d.msub) { st.mSub = d.msub; renderMain(f); return; }
+  if (d.mir) { st.can = st.zon = st.cad = ""; st[d.mir] = d.val; st.mEst = "falta"; st.mSub = "faltantes"; renderMain(f); window.scrollTo({ top: $(".m-nav").offsetTop - 8, behavior: "smooth" }); return; }
+  if (d.mord) { const o = st.mOrd || { c: "zon", asc: true }; st.mOrd = { c: d.mord, asc: o.c === d.mord ? !o.asc : true }; renderMain(f); return; }
+  if (d.macc === "img") imagenFaltantes(f);
+  if (d.macc === "copiar") {
+    try { await navigator.clipboard.writeText(textoFaltantes(f)); t.textContent = "✓ Copiada"; }
+    catch (e) { t.textContent = "No se pudo copiar"; }
+    setTimeout(() => { t.textContent = "Copiar lista"; }, 1800);
+  }
+  if (d.macc === "wa") {
+    const n = $("#mWa").value.replace(/[^0-9]/g, "");
+    if (n.length < 10) { alert("Pon el número con código de país, sin + ni espacios. Ej: 593991234567"); return; }
+    const txt = textoFaltantes(f);
+    if (txt.length > 1800 && !confirm(`La lista es larga (${txt.length} caracteres) y WhatsApp puede cortarla.\n\nMejor filtra por zona y manda la imagen. ¿Abro igual?`)) return;
+    store("seg-wa", n);
+    window.open("https://wa.me/" + n + "?text=" + encodeURIComponent(txt), "_blank");
+  }
+});
 
 // Agrupaciones de «¿Qué falta subir?»: [clave en st.vista, campo de la fila, nombre].
 const GRUPOS = [["zon", "zon", "zona"], ["cad", "cad", "cadena / cliente"], ["per", "mer", "mercaderista"]];
@@ -1054,16 +1253,8 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-zona],[data-f='clear']"); if (!t) return;
-  const d = t.dataset;
-  if (d.zona !== undefined) {
-    st.zon = st.zon === d.zona ? "" : d.zona; st.cad = ""; st.abiertos.clear(); st.limit = 100; render();
-    // En el celular la gráfica se desliza: deja a la vista la barra elegida.
-    const c = $(".zchart"), b = $(".zcol.on");
-    if (c && b) c.scrollLeft = b.offsetLeft - (c.clientWidth - b.clientWidth) / 2;
-    return;
-  }
-  if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const d = t.dataset;  if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.exver) { st.exVer = d.exver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.foto) { const fi = ev.target.closest("[data-fi]")?.dataset.fi; abrirFoto(d.foto, fi === undefined ? undefined : +fi); return; }
   if ("ppt" in d) { armarPpt(); return; }
