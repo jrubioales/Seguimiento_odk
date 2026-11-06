@@ -43,6 +43,38 @@
   --accent: #3987e5; --accent-wash: rgba(57,135,229,0.16);
   --ok-ink: #0ca30c; --nov-ink: #fab219; --track: #2c2c2a;
 }
+/* Avance por zona (solo SOS, planes, check outs y KBDS) */
+.zonas-card h2 { margin: 0; font-size: 16px; }
+.zleg { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
+.zleg i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.zleg .l-falta { background: var(--track); outline: 1px dashed var(--muted); outline-offset: -1px; }
+.zchart { display: grid; grid-template-columns: repeat(var(--n), minmax(84px, 1fr)); gap: 8px; overflow-x: auto; padding: 4px 2px 2px; margin-top: 14px; }
+.zcol { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 300px;
+  border: 0; background: none; padding: 0; cursor: pointer; border-radius: 8px; }
+.zcol:hover, .zcol:focus-visible { background: var(--surface-2); outline: none; }
+.zchart.sel .zcol:not(.on) { opacity: .42; }
+.zpct { font-size: 18px; font-weight: 700; line-height: 1.1; }
+.zxy { font-size: 12px; color: var(--ink-2); }
+.zfal { font-size: 12px; color: var(--falta); font-weight: 600; margin-bottom: 6px; }
+.zfal.cero { color: var(--ok-ink); }
+.zbar { width: min(58px, 72%); background: var(--track); border-radius: 4px 4px 0 0; display: flex; flex-direction: column-reverse; gap: 2px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--grid); }
+.zbar .s-ok { background: var(--ok); }
+.zbar .s-nov { background: var(--nov); }
+.znom { width: 100%; border-top: 1px solid var(--ink-2); padding: 6px 2px 4px; font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; min-height: 40px; }
+.zcol.on .znom { color: var(--accent); }
+.ztip { display: none; position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2; min-width: 150px; text-align: left;
+  background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.ztip b { display: block; font-size: 13px; }
+.ztip .r { display: flex; justify-content: space-between; gap: 12px; }
+.ztip .r span:last-child { font-variant-numeric: tabular-nums; font-weight: 600; }
+.zcol:hover .ztip, .zcol:focus-visible .ztip { display: block; }
+@media (max-width: 600px) {
+  .zchart { grid-template-columns: repeat(var(--n), minmax(66px, 1fr)); gap: 4px; }
+  .zcol { height: 270px; }
+  .zpct { font-size: 16px; }
+  .znom { font-size: 11px; }
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -473,7 +505,7 @@ function renderMain(f) {
   const grp = GRUPOS.find(([k]) => k === st.vista);
   const cuerpo = grp ? porGrupo(f, rs, grp) : porLocal(f, rs, c);
   const btn = (k, t) => `<button type="button" data-vista="${k}" aria-pressed="${st.vista === k}">${t}</button>`;
-  $("#main").innerHTML = franjaPeriodos(f) + avance + `<section class="card">
+  $("#main").innerHTML = franjaPeriodos(f) + avance + (MENSUALES.includes(f.key) ? graficoZonas(f) : "") + `<section class="card">
     <div class="card-head">
       <h2>¿Qué falta subir?</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -501,6 +533,40 @@ function franjaPeriodos(f) {
 }
 
 const sinPersona = n => /^sin (alcance|asignar)/i.test(n) ? 1 : 0;
+
+// Avance por zona en barras: la altura es el objetivo de la zona y el relleno
+// lo subido. Solo en las encuestas mensuales; tocar una barra filtra la zona.
+const MENSUALES = ["sos", "pl", "co", "kb"];
+const ORDEN_ZONAS = ["QUITO", "SIERRA NORTE", "SIERRA CENTRO", "AUSTRO", "COSTA NORTE", "COSTA CENTRO", "GUAYAQUIL NORTE", "GUAYAQUIL SUR"];
+
+function graficoZonas(f) {
+  const zon = st.zon; st.zon = ""; const rs = filasPeriodo(f); st.zon = zon;
+  const m = new Map();
+  for (const r of rs) { const k = r.zon || "Sin zona"; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+  const pos = z => { const i = ORDEN_ZONAS.indexOf(z); return i < 0 ? 99 : i; };
+  const zonas = [...m].map(([z, l]) => ({ z, c: contar(l) })).sort((a, b) => pos(a.z) - pos(b.z) || a.z.localeCompare(b.z, "es"));
+  if (!zonas.length) return "";
+  const max = Math.max(...zonas.map(x => x.c.tot));
+  const ALTO = 190;  // px de la barra de la zona con el objetivo más grande
+  const cols = zonas.map(({ z, c }) => {
+    const h = Math.max(8, Math.round(ALTO * c.tot / max));
+    const seg = (n, cls) => n ? `<i class="${cls}" style="height:${(100 * n / c.tot).toFixed(2)}%"></i>` : "";
+    const fila = (t, v) => `<div class="r"><span>${t}</span><span>${v}</span></div>`;
+    return `<button type="button" class="zcol${zon === z ? " on" : ""}" data-zona="${esc(z)}" aria-label="${esc(z)}: ${c.sub} de ${c.tot}, faltan ${c.falta}">
+      <div class="ztip"><b>${esc(z)}</b>${fila("Objetivo", fmt(c.tot))}${fila("Subido", fmt(c.ok))}${c.nov ? fila("Con novedad", fmt(c.nov)) : ""}${fila("Faltan", fmt(c.falta))}${fila("Avance", c.pct + "%")}</div>
+      <div class="zpct">${c.pct}%</div>
+      <div class="zxy">${fmt(c.sub)} de ${fmt(c.tot)}</div>
+      <div class="zfal${c.falta ? "" : " cero"}">${c.falta ? `faltan ${fmt(c.falta)}` : "✓ completo"}</div>
+      <div class="zbar" style="height:${h}px">${seg(c.ok, "s-ok")}${seg(c.nov, "s-nov")}</div>
+      <div class="znom">${esc(z)}</div></button>`;
+  }).join("");
+  return `<section class="card zonas-card">
+    <div class="card-head" style="margin:0"><h2>Avance por zona · objetivo del mes</h2>
+      <div class="zleg"><span><i style="background:var(--ok)"></i>Subido</span><span><i style="background:var(--nov)"></i>Con novedad</span><span><i class="l-falta"></i>Falta para el objetivo</span></div></div>
+    <div class="zchart${zon ? " sel" : ""}" style="--n:${zonas.length}">${cols}</div>
+    <p class="sub" style="margin:8px 0 0">La altura de cada barra es el objetivo de la zona. ${zon ? `Mostrando solo <b>${esc(zon)}</b>; toca la barra otra vez para ver todas.` : "Toca una zona para filtrarla."}</p>
+  </section>`;
+}
 
 // Agrupaciones de «¿Qué falta subir?»: [clave en st.vista, campo de la fila, nombre].
 const GRUPOS = [["zon", "zon", "zona"], ["cad", "cad", "cadena / cliente"], ["per", "mer", "mercaderista"]];
@@ -988,8 +1054,15 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-zona],[data-f='clear']"); if (!t) return;
   const d = t.dataset;
+  if (d.zona !== undefined) {
+    st.zon = st.zon === d.zona ? "" : d.zona; st.cad = ""; st.abiertos.clear(); st.limit = 100; render();
+    // En el celular la gráfica se desliza: deja a la vista la barra elegida.
+    const c = $(".zchart"), b = $(".zcol.on");
+    if (c && b) c.scrollLeft = b.offsetLeft - (c.clientWidth - b.clientWidth) / 2;
+    return;
+  }
   if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.exver) { st.exVer = d.exver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.foto) { const fi = ev.target.closest("[data-fi]")?.dataset.fi; abrirFoto(d.foto, fi === undefined ? undefined : +fi); return; }
