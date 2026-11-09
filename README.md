@@ -6,7 +6,7 @@ le falta y qué subió con novedad, en estos formularios:
 | Pestaña | Formulario ODK | Universo (lista de entidades del formulario) | Qué se espera |
 |---|---|---|---|
 | Visibilidad | `seguimiento_muebles_alquilados_uiux_v4` | `muebles_por_local_lista` (718 locales) | 1 registro por local **cada mes** |
-| Acuerdos comerciales | `acuerdos_comerciales` | `acuerdos_por_local_lista` (829 local × acuerdo) | 1 registro por local y acuerdo **cada 2 semanas** (bloques de lunes a domingo de la semana siguiente, desde el 2 nov 2026: semanas 45-46, 47-48…; antes era cada semana ISO) mientras el acuerdo esté vigente |
+| Acuerdos comerciales | `acuerdos_comerciales` | `acuerdos_por_local_lista` (829 local × acuerdo) | 1 registro por local y acuerdo **cada 2 semanas** (bloques de lunes a domingo de la semana siguiente, desde el 9 nov 2026: semanas 46-47, 48-49…; antes era cada semana ISO) mientras el acuerdo esté vigente |
 | Promociones | `promociones_mercaderista` | `locales_promociones_lista` (920 locales) | 1 registro por local **cada semana** (lunes a domingo) |
 | Exhibiciones ganadas | `extravisibilidad_ganados_moderno` | `ganadas_moderno` (una entidad por exhibición) | No hay registros esperados: mide exhibiciones **activas, ganadas y perdidas** por semana ISO |
 | SOS percha | `sos_participacion_percha_moderno` | `tiendas_moderno_1008.csv` (447 locales) | 1 registro por local **cada mes** |

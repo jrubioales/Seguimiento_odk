@@ -57,7 +57,7 @@ FORM_KB = "kbds"
 MESES_VIS = 2                      # meses que muestra visibilidad (el actual y el anterior)
 SEMANAS_PROMO = 4                  # semanas hacia atras que muestra promociones
 PERIODOS_AC = 8                    # periodos hacia atras que muestra acuerdos
-INICIO_QUINCENA_AC = date(2026, 11, 2)  # desde este lunes acuerdos se mide cada 2 semanas (antes, semanal)
+INICIO_QUINCENA_AC = date(2026, 11, 9)  # desde este lunes acuerdos se mide cada 2 semanas (antes, semanal)
 SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
 MESES_MENS = 2                     # meses que muestran SOS, planes, check outs y KBDS
 MAX_DETALLE = 6                    # novedades listadas por registro
@@ -578,7 +578,7 @@ def armar_acuerdos(odk: Odk, personal: Personal, hoy: date) -> dict:
     extra = [r for r in registros if g(r, "grp_local/acuerdo_id") not in llaves]
     return {
         "titulo": "Acuerdos comerciales",
-        "subtitulo": "Un registro por local y acuerdo cada 2 semanas mientras esté vigente (hasta el 1 nov era cada semana)",
+        "subtitulo": "Un registro por local y acuerdo cada 2 semanas mientras esté vigente (hasta el 8 nov era cada semana)",
         "unidad": "acuerdos",
         "periodos": [{"id": s.isoformat(), "label": etiqueta_ac(s)} for s in semanas if s.isoformat() in con_filas],
         "periodo_tipo": "semana",
