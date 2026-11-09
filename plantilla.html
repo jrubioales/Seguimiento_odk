@@ -553,7 +553,7 @@ function franjaPeriodos(f) {
   const items = f.periodos.slice().reverse().map((p, i, arr) => {
     const c = contar(filasPeriodo(f, p.id));
     const actual = i === arr.length - 1;
-    const corto = semana ? "Semana " + (p.label.match(/^Semana (\d+)/) || [])[1] : p.label;
+    const corto = semana ? p.label.split("·")[0].trim() : p.label;
     const rango = semana ? p.label.split("·")[1]?.trim() : "";
     return `<button type="button" class="per-btn" data-per="${esc(p.id)}" aria-pressed="${p.id === st.per[f.key]}">
       <span class="per-n">${esc(corto)}${actual ? ' <span class="en-curso">en curso</span>' : ""}</span>

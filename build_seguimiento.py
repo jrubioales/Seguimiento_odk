@@ -7,7 +7,7 @@ Pages la sirve.
 
     Formulario                               Universo (lista de entidades)      Periodo esperado
     seguimiento_muebles_alquilados_uiux_v4   muebles_por_local_lista            un registro por local cada mes
-    acuerdos_comerciales                     acuerdos_por_local_lista           un registro por local y acuerdo en su vigencia
+    acuerdos_comerciales                     acuerdos_por_local_lista           un registro por local y acuerdo cada 2 semanas en su vigencia
     promociones_mercaderista                 locales_promociones_lista          un registro por local cada semana (lun-dom)
     extravisibilidad_ganados_moderno         ganadas_moderno                    exhibiciones activas, ganadas y perdidas por semana y canal
 
@@ -56,7 +56,8 @@ FORM_KB = "kbds"
 
 MESES_VIS = 2                      # meses que muestra visibilidad (el actual y el anterior)
 SEMANAS_PROMO = 4                  # semanas hacia atras que muestra promociones
-SEMANAS_AC = 8                     # semanas ISO hacia atras que muestra acuerdos
+PERIODOS_AC = 8                    # periodos hacia atras que muestra acuerdos
+INICIO_QUINCENA_AC = date(2026, 11, 9)  # desde este lunes acuerdos se mide cada 2 semanas (antes, semanal)
 SEMANAS_EX = 12                    # semanas ISO hacia atras que muestra exhibiciones ganadas
 MESES_MENS = 2                     # meses que muestran SOS, planes, check outs y KBDS
 MAX_DETALLE = 6                    # novedades listadas por registro
@@ -492,6 +493,26 @@ def novedades_ac(reg: dict) -> list[str]:
     return out
 
 
+def periodo_ac(d: date) -> date:
+    """Inicio del periodo de acuerdos: semana ISO antes de INICIO_QUINCENA_AC, luego bloques de 14 dias."""
+    if d >= INICIO_QUINCENA_AC:
+        return INICIO_QUINCENA_AC + timedelta(days=14 * ((d - INICIO_QUINCENA_AC).days // 14))
+    return lunes(d)
+
+
+def dias_ac(s: date) -> int:
+    return 14 if s >= INICIO_QUINCENA_AC else 7
+
+
+def etiqueta_ac(s: date) -> str:
+    """``Semanas 46-47 · 9 nov al 22 nov`` (o la etiqueta semanal antes del cambio)."""
+    if dias_ac(s) == 7:
+        return etiqueta_semana(s)
+    fin = s + timedelta(days=13)
+    return (f"Semanas {s.isocalendar().week}-{fin.isocalendar().week} · "
+            f"{s.day} {MESES[s.month - 1][:3]} al {fin.day} {MESES[fin.month - 1][:3]}")
+
+
 def armar_acuerdos(odk: Odk, personal: Personal, hoy: date) -> dict:
     universo = odk.lista(FORM_AC, "acuerdos_por_local_lista.csv")
     desde = min((fecha_de(u.get("vigencia_desde")) for u in universo if fecha_de(u.get("vigencia_desde"))), default=None)
@@ -500,15 +521,17 @@ def armar_acuerdos(odk: Odk, personal: Personal, hoy: date) -> dict:
         personal.agregar(u.get("acc_1", ""), u.get("mercaderista"), u.get("supervisor"),
                          local=u.get("local_id", ""), zona=u.get("acc_zona", ""))
 
-    # Registros por acuerdo y semana ISO de la visita (lunes a domingo).
+    # Registros por acuerdo y periodo de la visita (semana ISO o bloque de 2 semanas).
     por_llave_sem: dict[tuple[str, date], list[dict]] = defaultdict(list)
     for r in registros:
         f = fecha_de(r.get("fecha"))
         if f:
-            por_llave_sem[(g(r, "grp_local/acuerdo_id"), lunes(f))].append(r)
+            por_llave_sem[(g(r, "grp_local/acuerdo_id"), periodo_ac(f))].append(r)
 
-    semana_hoy = lunes(hoy)
-    semanas = [semana_hoy - timedelta(weeks=i) for i in range(SEMANAS_AC)]
+    semana_hoy = periodo_ac(hoy)
+    semanas = [semana_hoy]
+    while len(semanas) < PERIODOS_AC:
+        semanas.append(periodo_ac(semanas[-1] - timedelta(days=1)))
     # Antes de la primera semana con registros el formulario no existia.
     con_datos = {s for (_, s) in por_llave_sem}
     semanas = [s for s in semanas if not con_datos or s >= min(con_datos)]
@@ -522,9 +545,9 @@ def armar_acuerdos(odk: Odk, personal: Personal, hoy: date) -> dict:
         productos = [u.get(f"mueble_{k}_item_{i}_label") for k in range(1, 6) for i in range(1, 5)
                      if u.get(f"mueble_{k}_item_{i}_label")]
         clases = [clasificar(p) for p in productos]
-        # Se espera un registro en cada semana que toque la vigencia del acuerdo.
+        # Se espera un registro en cada periodo que toque la vigencia del acuerdo.
         for s in semanas:
-            if not (desde <= s + timedelta(days=6) and hasta >= s):
+            if not (desde <= s + timedelta(days=dias_ac(s) - 1) and hasta >= s):
                 continue
             regs = sorted(por_llave_sem.get((u["llave"], s), []), key=lambda r: g(r, "__system/submissionDate") or "")
             vigentes = [r for r in regs if str(g(r, "grp_local/vigente")) != "0"]
@@ -555,9 +578,9 @@ def armar_acuerdos(odk: Odk, personal: Personal, hoy: date) -> dict:
     extra = [r for r in registros if g(r, "grp_local/acuerdo_id") not in llaves]
     return {
         "titulo": "Acuerdos comerciales",
-        "subtitulo": "Un registro por local y acuerdo cada semana mientras esté vigente",
+        "subtitulo": "Un registro por local y acuerdo cada 2 semanas mientras esté vigente (hasta el 8 nov era cada semana)",
         "unidad": "acuerdos",
-        "periodos": [{"id": s.isoformat(), "label": etiqueta_semana(s)} for s in semanas if s.isoformat() in con_filas],
+        "periodos": [{"id": s.isoformat(), "label": etiqueta_ac(s)} for s in semanas if s.isoformat() in con_filas],
         "periodo_tipo": "semana",
         "filas": filas,
         "fuera": fuera_de_lista(extra, "grp_local/local_id", "grp_local/local_nombre", "fecha"),
