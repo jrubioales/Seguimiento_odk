@@ -279,7 +279,7 @@ const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
-const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", q: "", vista: "zon", ver: "falta", dim: "cat",
+const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", sku: "", q: "", vista: "zon", ver: "falta", dim: "cat",
   exVista: "res", exVer: "act", abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
@@ -493,9 +493,12 @@ function renderFiltros(f) {
   const propios = f.key === "ac" ? ["acu"] : [];
   if (ex || f.can_titulo) propios.push("can");
   if (!ex) propios.push("zon");
-  for (const k of [...propios, "cad", "sup", "neg", "cat"]) if (st[k] && !uniq(base, k).includes(st[k])) st[k] = "";
+  if (ex) propios.push("sku");
+  const campo = k => k === "sku" ? "skus" : k;
+  for (const k of [...propios, "cad", "sup", "neg", "cat"]) if (st[k] && !uniq(base, campo(k)).includes(st[k])) st[k] = "";
   if (!propios.includes("can")) st.can = "";
   if (!propios.includes("zon")) st.zon = "";
+  if (!propios.includes("sku")) st.sku = "";
   // Cadena depende de zona y del canal/plan elegidos.
   const paraCad = base.filter(r => (!st.can || r.can === st.can) && (!st.zon || r.zon === st.zon));
   const negs = uniq(base, "neg");
@@ -507,12 +510,13 @@ function renderFiltros(f) {
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
     ${negs.length ? `<select data-f="neg" aria-label="Negocio">${opt(negs, st.neg, "Todos los negocios")}</select>
     <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>` : ""}
+    ${ex ? `<select data-f="sku" aria-label="SKU" style="max-width:320px">${opt(uniq(base.filter(r => (!st.neg || r.neg.includes(st.neg)) && (!st.cat || r.cat.includes(st.cat))), "skus"), st.sku, "Todos los SKU")}</select>` : ""}
     <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
-    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.sku || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
 }
 
 // Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
-const FILTROS = ["acu", "can", "zon", "cad", "sup", "neg", "cat", "q"];
+const FILTROS = ["acu", "can", "zon", "cad", "sup", "neg", "cat", "sku", "q"];
 function filasBase(f) { const g = {}; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
 
 function renderMain(f) {
@@ -834,7 +838,7 @@ function semanaEx(per) {
 function exFiltro(f) {
   const q = norm(st.q).trim();
   return f.filas.filter(r => (!st.can || r.can === st.can) && (!st.cad || r.cad === st.cad) && (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
-    (!st.cat || r.cat.includes(st.cat)) && (!q || r._q.includes(q)));
+    (!st.cat || r.cat.includes(st.cat)) && (!st.sku || (r.skus || []).includes(st.sku)) && (!q || r._q.includes(q)));
 }
 
 // rs = exhibiciones que estuvieron activas en algún momento de la semana w.
@@ -1146,7 +1150,7 @@ async function armarPpt() {
     if (!window.JSZip) await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
     const zip = await JSZip.loadAsync(await (await fetch("plantilla_ppt.pptx")).arrayBuffer());
     const per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
-    const filtros = [st.can, st.cad, st.neg, st.cat, st.sup, st.q && `“${st.q}”`].filter(Boolean);
+    const filtros = [st.can, st.cad, st.neg, st.cat, st.sku, st.sup, st.q && `“${st.q}”`].filter(Boolean);
     const verTxt = VER_EX.find(v => v[0] === st.exVer)[1];
     const titulo = st.cad || "EXHIBICIONES GANADAS";
     const subtitulo = `${per}${filtros.length ? " · " + filtros.join(" · ") : ""}`;
@@ -1244,7 +1248,7 @@ function descargarEx(f) {
 document.addEventListener("change", ev => {
   const k = ev.target.dataset?.f; if (!k || k === "q") return;
   if (k === "dim") { st.dim = ev.target.value; st.abiertos.clear(); renderMain(D.formularios[st.tab]); return; }
-  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = ""; if (k === "can" || k === "zon") st.cad = ""; if (k === "can") st.zon = ""; }
+  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = st.sku = ""; if (k === "cat") st.sku = ""; if (k === "can" || k === "zon") st.cad = ""; if (k === "can") st.zon = ""; }
   st.limit = 100; render();
 });
 let tq;
