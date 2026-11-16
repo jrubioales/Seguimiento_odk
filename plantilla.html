@@ -157,6 +157,16 @@ nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(-
 .seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .seg button + button { border-left: 1px solid var(--ring); }
 .seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); font-weight: 600; }
+.g-ex { display: block; max-width: 100%; height: auto; margin-top: 8px; }
+.g-ex .g-grid { stroke: var(--grid); stroke-width: 1; }
+.g-ex .g-eje { fill: var(--muted); font-size: 11px; }
+.g-ex .g-val { fill: var(--ink); font-size: 12px; font-weight: 600; }
+.g-ex .g-linea { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.g-ex .g-punto { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.g-ex .g-punto.on { stroke: var(--ink); }
+.g-ex .g-sel { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.g-dia { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); font-size: 14px; }
+#gTip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none; }
 .btn2 { border: 1px solid var(--ring); background: var(--surface); border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 13px; }
 
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
@@ -280,7 +290,7 @@ const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
 const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", sku: "", q: "", vista: "zon", ver: "falta", dim: "cat",
-  exVista: "res", exVer: "act", abiertos: new Set(), limit: 100 };
+  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -892,7 +902,7 @@ function renderEx(f) {
       <td class="n hide-sm">${gr.m.diasAct === null ? "—" : fmt(gr.m.diasAct)}</td></tr>${det}`;
   }).join("");
   const sel = `<select data-f="dim" aria-label="Agrupar por" style="background:var(--surface);border:1px solid var(--ring);border-radius:8px;padding:6px 9px">${DIMS.map(([k, t]) => `<option value="${k}"${k === dim ? " selected" : ""}>Por ${t.toLowerCase()}</option>`).join("")}</select>`;
-  $("#main").innerHTML = franjaEx(f) + resumen + vistas + `<section class="card">
+  $("#main").innerHTML = franjaEx(f) + resumen + vistas + graficoEx(f) + `<section class="card">
     <div class="card-head"><h2>Exhibiciones por ${esc(nombreDim.toLowerCase())}</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${sel}<button class="btn2" type="button" data-csv>Descargar</button></div></div>
     ${lista.length ? `<div class="tbl"><table>
@@ -900,6 +910,80 @@ function renderEx(f) {
       <tbody>${filas}</tbody></table></div>
       <p class="sub" style="margin:10px 0 0">Ganadas y perdidas son de la semana elegida. Toca una fila para ver sus exhibiciones.${["neg", "cat", "skus"].includes(dim) ? " Una exhibición con varios productos cuenta en cada uno." : ""}</p>`
       : '<p class="empty">No hay exhibiciones en esta semana con estos filtros.</p>'}</section>`;
+}
+
+/* ---------- evolución (gráfico de líneas) ---------- */
+// Activas al cierre de cada semana o de cada día, con los filtros de arriba.
+const masDias = (iso, n) => new Date(new Date(iso + "T00:00:00Z").getTime() + n * DIA).toISOString().slice(0, 10);
+const DIAS_GRAF = 60;
+const fcorta = iso => { const d = new Date(iso + "T00:00:00Z"); return `${d.getUTCDate()} ${MESES_C[d.getUTCMonth()]}`; };
+const MESES_C = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+function rangoDiasEx(rs) {
+  const primera = rs.reduce((m, r) => r.alta < m ? r.alta : m, D.hoy);
+  const desde = masDias(D.hoy, -(DIAS_GRAF - 1));
+  return { min: primera > desde ? primera : desde, max: D.hoy };
+}
+
+function serieEx(f) {
+  const rs = exFiltro(f);
+  const medir = (ini, fin) => ({
+    act: rs.filter(r => r.alta <= fin && !(r.baja && r.baja <= fin)).length,
+    gan: rs.filter(r => r.alta >= ini && r.alta <= fin).length,
+    per: rs.filter(r => r.baja && r.baja >= ini && r.baja <= fin).length,
+  });
+  if (st.exEsc === "dia") {
+    const { min, max } = rangoDiasEx(rs), out = [];
+    for (let d = min; d <= max; d = masDias(d, 1)) out.push({ id: d, eje: fcorta(d), tit: fcorta(d), ...medir(d, d) });
+    return { rs, pts: out };
+  }
+  return { rs, pts: f.periodos.slice().reverse().map(p => {
+    const w = semanaEx(p.id), sem = (p.label.match(/^Semana (\d+)/) || [])[1];
+    return { id: p.id, eje: "S" + sem, tit: `Semana ${sem} · ${fcorta(w.ini)} al ${fcorta(w.fin)}`, ...medir(w.ini, w.fin) };
+  }) };
+}
+
+function graficoEx(f) {
+  const { rs, pts } = serieEx(f), dia = st.exEsc === "dia";
+  const rango = rangoDiasEx(rs);
+  if (!st.exDia || st.exDia > rango.max) st.exDia = rango.max;
+  if (st.exDia < rango.min) st.exDia = rango.min;
+  const sel = dia ? st.exDia : st.per.ex;
+  const W = Math.max(300, Math.min(1000, (($("#main") || {}).clientWidth || 800) - 34)), H = 240;
+  const L = 38, R = 44, T = 18, B = 28, iw = W - L - R, ih = H - T - B;
+  const maxV = Math.max(1, ...pts.map(p => p.act));
+  const paso = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000].find(s => maxV / s <= 4) || 1000;
+  const tope = Math.ceil(maxV / paso) * paso;
+  const x = i => L + (pts.length < 2 ? iw / 2 : i * iw / (pts.length - 1));
+  const y = v => T + ih - v / tope * ih;
+  let svg = "";
+  for (let v = 0; v <= tope; v += paso) svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g-grid"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" class="g-eje">${fmt(v)}</text>`;
+  const cadaN = Math.max(1, Math.ceil(pts.length / Math.max(2, Math.floor(iw / 62))));
+  pts.forEach((p, i) => { if ((pts.length - 1 - i) % cadaN === 0) svg += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" class="g-eje">${esc(p.eje)}</text>`; });
+  const iSel = pts.findIndex(p => p.id === sel);
+  if (iSel >= 0) svg += `<line x1="${x(iSel)}" x2="${x(iSel)}" y1="${T}" y2="${T + ih}" class="g-sel"/>`;
+  svg += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.act).toFixed(1)}`).join("")}" class="g-linea"/>`;
+  pts.forEach((p, i) => { if (!dia || i === iSel || i === pts.length - 1) svg += `<circle cx="${x(i)}" cy="${y(p.act)}" r="${i === iSel ? 5 : 4}" class="g-punto${i === iSel ? " on" : ""}"/>`; });
+  if (pts.length) { const u = pts.length - 1; svg += `<text x="${x(u) + 9}" y="${y(pts[u].act) + 4}" class="g-val">${fmt(pts[u].act)}</text>`; }
+  const ancho = pts.length < 2 ? iw : iw / (pts.length - 1);
+  pts.forEach((p, i) => { svg += `<rect x="${x(i) - ancho / 2}" y="${T}" width="${ancho}" height="${ih + B}" fill="transparent" data-expt="${esc(p.id)}" data-tip="${esc(`${p.tit}|${p.act}|${p.gan}|${p.per}`)}" style="cursor:pointer"/>`; });
+
+  let detalle = "";
+  if (dia) {
+    const p = pts.find(q => q.id === st.exDia) || { act: 0, gan: 0, per: 0 };
+    const w = { ini: st.exDia, fin: st.exDia };
+    const delDia = rs.filter(r => r.alta === st.exDia || r.baja === st.exDia).sort((a, b) => (a.baja === st.exDia) - (b.baja === st.exDia) || a.loc.localeCompare(b.loc, "es"));
+    detalle = `<div class="g-dia"><b>${esc(fdate(st.exDia))}</b> · ${fmt(p.act)} activas al cierre · <span class="cero">+${fmt(p.gan)} ganadas</span> · <span class="${p.per ? "falta-n" : ""}">−${fmt(p.per)} perdidas</span></div>
+      ${delDia.length ? `<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Ver ${delDia.length === 1 ? "la exhibición ganada o perdida" : `las ${fmt(delDia.length)} exhibiciones ganadas o perdidas`} ese día</summary><ul style="list-style:none;margin:0;padding:0">${delDia.map(r => itemEx(r, w)).join("")}</ul></details>` : '<p class="sub" style="margin:6px 0 0">Ese día no se ganó ni se perdió ninguna exhibición.</p>'}`;
+  }
+  const ctrl = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="seg" role="group"><button type="button" data-exesc="sem" aria-pressed="${!dia}">Por semana</button><button type="button" data-exesc="dia" aria-pressed="${dia}">Por día</button></div>
+      ${dia ? `<label class="sub" style="display:flex;gap:6px;align-items:center">Día <input type="date" data-exdia value="${st.exDia}" min="${rango.min}" max="${rango.max}" style="background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:8px;padding:5px 8px"></label>` : ""}</div>`;
+  return `<section class="card">
+    <div class="card-head"><h2>Exhibiciones activas ${dia ? "día a día" : "semana a semana"}</h2>${ctrl}</div>
+    <svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Exhibiciones activas ${dia ? "por día" : "por semana"}">${svg}</svg>
+    <p class="sub" style="margin:6px 0 0">Activas al cierre de cada ${dia ? "día" : "semana"} con los filtros de arriba. ${dia ? `Últimos ${DIAS_GRAF} días como máximo. Toca un punto o elige el día para ver qué se ganó y qué se perdió.` : "Toca un punto para abrir esa semana."}</p>
+    ${detalle}</section>`;
 }
 
 function itemEx(r, w) {
@@ -1257,8 +1341,11 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
-  const d = t.dataset;  if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-exesc],[data-expt],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const d = t.dataset;
+  if (d.exesc) { st.exEsc = d.exesc; renderMain(D.formularios[st.tab]); return; }
+  if (d.expt) { ocultarTip(); if (st.exEsc === "dia") { st.exDia = d.expt; renderMain(D.formularios[st.tab]); } else { st.per.ex = d.expt; st.abiertos.clear(); st.limit = 100; render(); } return; }
+  if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.exver) { st.exVer = d.exver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if (d.foto) { const fi = ev.target.closest("[data-fi]")?.dataset.fi; abrirFoto(d.foto, fi === undefined ? undefined : +fi); return; }
   if ("ppt" in d) { armarPpt(); return; }
@@ -1271,6 +1358,23 @@ document.addEventListener("click", ev => {
   if (d.ver) { st.ver = d.ver; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
   if ("more" in d) { st.limit += 200; renderMain(D.formularios[st.tab]); return; }
   if ("csv" in d) descargar(D.formularios[st.tab]);
+});
+
+// Gráfico de exhibiciones: elegir día y tooltip al pasar sobre un punto.
+document.addEventListener("change", ev => {
+  if (!("exdia" in (ev.target.dataset || {})) || !ev.target.value) return;
+  st.exDia = ev.target.value; renderMain(D.formularios[st.tab]);
+});
+function ocultarTip() { const t = $("#gTip"); if (t) t.style.display = "none"; }
+document.addEventListener("mousemove", ev => {
+  const r = ev.target.closest?.("[data-tip]");
+  if (!r) return ocultarTip();
+  let t = $("#gTip"); if (!t) { t = document.createElement("div"); t.id = "gTip"; document.body.appendChild(t); }
+  const [tit, act, gan, per] = r.dataset.tip.split("|");
+  t.innerHTML = `<b>${esc(tit)}</b><br>${fmt(+act)} activas · <span class="cero">+${fmt(+gan)}</span> ganadas · <span class="${+per ? "falta-n" : ""}">−${fmt(+per)}</span> perdidas`;
+  t.style.display = "block";
+  const x = Math.min(ev.clientX + 14, innerWidth - t.offsetWidth - 8);
+  t.style.left = x + "px"; t.style.top = (ev.clientY - t.offsetHeight - 12 < 0 ? ev.clientY + 16 : ev.clientY - t.offsetHeight - 12) + "px";
 });
 
 function descargar(f) {
