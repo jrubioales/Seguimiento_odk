@@ -125,6 +125,18 @@ nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(-
 .filters .per { font-weight: 600; max-width: 340px; }
 .filters input { flex: 1 1 200px; }
 .filters .clear { border: 0; background: none; color: var(--accent); cursor: pointer; }
+.multi { position: relative; }
+.multi summary { list-style: none; cursor: pointer; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 7px 28px 7px 9px; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.multi summary::-webkit-details-marker { display: none; }
+.multi summary::after { content: "▾"; position: absolute; right: 9px; color: var(--muted); }
+.multi summary.con { border-color: var(--accent); background: var(--accent-wash); font-weight: 600; }
+.multi-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; width: 340px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.filters .multi-pop input[type=search] { flex: none; width: 100%; }
+.multi-pop .clear { align-self: flex-start; padding: 2px 0; }
+.multi-ops { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; }
+.multi-ops label { display: flex; gap: 8px; align-items: flex-start; padding: 5px 4px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.multi-ops label:hover { background: var(--accent-wash); }
+.multi-ops input { flex: none; margin-top: 2px; }
 
 /* avance por semana / mes */
 .periodos { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; scrollbar-width: thin; }
@@ -300,7 +312,7 @@ const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
 const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", sku: "", q: "", vista: "zon", ver: "falta", dim: "cat",
-  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", abiertos: new Set(), limit: 100 };
+  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", exSinPer: false, cats: [], skus: [], multiAbierto: "", multiQ: {}, abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -519,6 +531,14 @@ function renderFiltros(f) {
   if (!propios.includes("can")) st.can = "";
   if (!propios.includes("zon")) st.zon = "";
   if (!propios.includes("sku")) st.sku = "";
+  // Exhibiciones: categoría y SKU admiten varios valores (st.cats, st.skus).
+  const catsDisp = uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat");
+  if (ex) {
+    st.cat = st.sku = "";
+    st.cats = st.cats.filter(v => catsDisp.includes(v));
+  }
+  const skusDisp = ex ? uniq(base.filter(r => (!st.neg || r.neg.includes(st.neg)) && (!st.cats.length || r.cat.some(c => st.cats.includes(c)))), "skus") : [];
+  if (ex) st.skus = st.skus.filter(v => skusDisp.includes(v));
   // Cadena depende de zona y del canal/plan elegidos.
   const paraCad = base.filter(r => (!st.can || r.can === st.can) && (!st.zon || r.zon === st.zon));
   const negs = uniq(base, "neg");
@@ -529,15 +549,31 @@ function renderFiltros(f) {
     <select data-f="cad" aria-label="Cadena o cliente">${opt(uniq(paraCad, "cad"), st.cad, ex ? "Todas las cadenas" : "Todas las cadenas / clientes")}</select>
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
     ${negs.length ? `<select data-f="neg" aria-label="Negocio">${opt(negs, st.neg, "Todos los negocios")}</select>
-    <select data-f="cat" aria-label="Categoría">${opt(uniq(base.filter(r => !st.neg || r.neg.includes(st.neg)), "cat"), st.cat, "Todas las categorías")}</select>` : ""}
-    ${ex ? `<select data-f="sku" aria-label="SKU" style="max-width:320px">${opt(uniq(base.filter(r => (!st.neg || r.neg.includes(st.neg)) && (!st.cat || r.cat.includes(st.cat))), "skus"), st.sku, "Todos los SKU")}</select>` : ""}
+    ${ex ? multiSel("cats", catsDisp, "Todas las categorías", "categorías") : `<select data-f="cat" aria-label="Categoría">${opt(catsDisp, st.cat, "Todas las categorías")}</select>`}` : ""}
+    ${ex ? multiSel("skus", skusDisp, "Todos los SKU", "SKU") : ""}
     <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
-    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.sku || st.q ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.sku || st.q || (ex && (st.cats.length || st.skus.length)) ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
 }
 
 // Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
 const FILTROS = ["acu", "can", "zon", "cad", "sup", "neg", "cat", "sku", "q"];
-function filasBase(f) { const g = {}; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+function filasBase(f) { const g = { cats: st.cats, skus: st.skus }; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } st.cats = []; st.skus = []; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+
+// Lista desplegable con casillas para elegir varios valores (st[key] es un arreglo).
+function multiSel(key, lista, todos, plural) {
+  const el = st[key], txt = !el.length ? todos : el.length === 1 ? el[0] : `${el.length} ${plural}`;
+  return `<details class="multi" data-multi="${key}"${st.multiAbierto === key ? " open" : ""}>
+    <summary title="${esc(el.join(", "))}"${el.length ? ' class="con"' : ""}>${esc(txt)}</summary>
+    <div class="multi-pop">
+      ${lista.length > 8 ? `<input type="search" data-multiq="${key}" placeholder="Buscar…" value="${esc(st.multiQ[key] || "")}">` : ""}
+      ${el.length ? `<button type="button" class="clear" data-multix="${key}">Quitar selección (${el.length})</button>` : ""}
+      <div class="multi-ops">${lista.map(v => `<label><input type="checkbox" data-multiv="${key}" value="${esc(v)}"${el.includes(v) ? " checked" : ""}> ${esc(v)}</label>`).join("") || '<span class="sub">Sin opciones</span>'}</div>
+    </div></details>`;
+}
+function filtrarMulti(key) {
+  const q = norm(st.multiQ[key] || "").trim(), caja = document.querySelector(`.multi[data-multi="${key}"]`);
+  if (caja) for (const l of caja.querySelectorAll(".multi-ops label")) l.style.display = !q || norm(l.textContent).includes(q) ? "" : "none";
+}
 
 function renderMain(f) {
   if (f.key === "ex") return renderEx(f);
@@ -858,7 +894,7 @@ function semanaEx(per) {
 function exFiltro(f) {
   const q = norm(st.q).trim();
   return f.filas.filter(r => (!st.can || r.can === st.can) && (!st.cad || r.cad === st.cad) && (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
-    (!st.cat || r.cat.includes(st.cat)) && (!st.sku || (r.skus || []).includes(st.sku)) && (!q || r._q.includes(q)));
+    (!st.cats.length || r.cat.some(c => st.cats.includes(c))) && (!st.skus.length || (r.skus || []).some(s => st.skus.includes(s))) && (!q || r._q.includes(q)));
 }
 
 // rs = exhibiciones que estuvieron activas en algún momento de la semana w.
@@ -942,7 +978,8 @@ function rangoEx(f) {
 }
 
 function serieEx(f, rg) {
-  const rs = exFiltro(f);
+  // «Sin las perdidas»: solo las ganadas que hoy siguen activas (sin baja).
+  const rs = exFiltro(f).filter(r => !st.exSinPer || !r.baja);
   const medir = (ini, fin) => ({
     act: rs.filter(r => r.alta <= fin && !(r.baja && r.baja <= fin)).length,
     gan: rs.filter(r => r.alta >= ini && r.alta <= fin).length,
@@ -1017,26 +1054,27 @@ function graficoEx(f) {
     .sort((a, b) => !!(a.baja && a.baja <= fin) - !!(b.baja && b.baja <= fin) || b.alta.localeCompare(a.alta) || a.loc.localeCompare(b.loc, "es"));
   const que = st.exDia ? `el ${fdate(st.exDia)}` : (rg.desde === rg.hasta ? `el ${fdate(rg.desde)}` : `del ${fdate(rg.desde)} al ${fdate(rg.hasta)}`);
   const detalle = `<div class="g-dia"><b>${st.exDia ? esc(fdate(st.exDia)) : rg.desde === rg.hasta ? esc(fdate(rg.desde)) : `Del ${esc(fdate(rg.desde))} al ${esc(fdate(rg.hasta))}`}</b> ·
-      <span class="cero">+${fmt(m.gan)} ganadas</span> · <span class="${m.per ? "falta-n" : ""}">−${fmt(m.per)} perdidas</span> · ${fmt(m.act)} activas al cierre
+      <span class="cero">+${fmt(m.gan)} ganadas</span>${st.exSinPer ? " que siguen activas" : ` · <span class="${m.per ? "falta-n" : ""}">−${fmt(m.per)} perdidas</span> · ${fmt(m.act)} activas al cierre`}
       ${st.exDia ? ' · <button type="button" class="btn2" data-exrango style="padding:3px 9px;font-size:12px">Ver todo el rango</button>' : ""}</div>
-    ${lista.length ? `<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Ver ${lista.length === 1 ? "la exhibición ganada o perdida" : `las ${fmt(lista.length)} exhibiciones ganadas o perdidas`} ${esc(que)}</summary><ul style="list-style:none;margin:0;padding:0">${lista.map(r => itemEx(r, w)).join("")}</ul></details>`
+    ${lista.length ? `<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Ver ${lista.length === 1 ? "la exhibición ganada o perdida" : `las ${fmt(lista.length)} exhibiciones ${st.exSinPer ? "ganadas" : "ganadas o perdidas"}`} ${esc(que)}</summary><ul style="list-style:none;margin:0;padding:0">${lista.map(r => itemEx(r, w)).join("")}</ul></details>`
       : `<p class="sub" style="margin:6px 0 0">No se ganó ni se perdió ninguna exhibición ${esc(que)}.</p>`}`;
 
   const fecha = (k, v, t) => `<label class="sub" style="display:flex;gap:6px;align-items:center">${t} <input type="date" data-ex${k} value="${v}" min="${rg.min}" max="${rg.max}" class="g-fecha"></label>`;
   const ctrl = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <div class="seg" role="group"><button type="button" data-exesc="sem" aria-pressed="${!dia}">Por semana</button><button type="button" data-exesc="dia" aria-pressed="${dia}">Por día</button></div>
+      <div class="seg" role="group" title="Sin las perdidas: cuenta solo las exhibiciones ganadas que hoy siguen activas"><button type="button" data-exsinper="0" aria-pressed="${!st.exSinPer}">Todas</button><button type="button" data-exsinper="1" aria-pressed="${st.exSinPer}">Sin las perdidas</button></div>
       ${fecha("desde", rg.desde, "Desde")}${fecha("hasta", rg.hasta, "Hasta")}</div>`;
   const vacio = '<p class="empty">No hay periodos en ese rango.</p>';
   return `<section class="card">
     <div class="card-head"><h2>Evolución de exhibiciones ${dia ? "día a día" : "semana a semana"}</h2>${ctrl}</div>
     <div class="g-par">
-      <figure class="g-fig"><figcaption>Activas al cierre de cada ${dia ? "día" : "semana"}</figcaption>
+      <figure class="g-fig"><figcaption>${st.exSinPer ? "Ganadas que siguen activas hoy, acumuladas" : "Activas al cierre de cada " + (dia ? "día" : "semana")}</figcaption>
         ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Exhibiciones activas">${lin}</svg>` : vacio}</figure>
-      <figure class="g-fig"><figcaption>Ganadas y perdidas en cada ${dia ? "día" : "semana"}
-        <span class="g-ley"><i class="g-gan"></i>Ganadas <i class="g-per"></i>Perdidas</span></figcaption>
+      <figure class="g-fig"><figcaption>${st.exSinPer ? "Ganadas en cada " + (dia ? "día" : "semana") + " que siguen activas" : "Ganadas y perdidas en cada " + (dia ? "día" : "semana")}
+        <span class="g-ley"><i class="g-gan"></i>Ganadas${st.exSinPer ? "" : ' <i class="g-per"></i>Perdidas'}</span></figcaption>
         ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Exhibiciones ganadas y perdidas">${bar}</svg>` : vacio}</figure>
     </div>
-    <p class="sub" style="margin:6px 0 0">Con los filtros de arriba. ${dia ? "Toca un día en cualquiera de los dos gráficos para ver qué se ganó y qué se perdió ese día." : "Toca una semana para abrirla en toda la pestaña. Las semanas se muestran completas aunque el rango empiece o termine a mitad de semana."}</p>
+    <p class="sub" style="margin:6px 0 0">Con los filtros de arriba.${st.exSinPer ? " Solo cuenta las exhibiciones ganadas que hoy siguen activas: las que ya se perdieron no aparecen en ninguna semana." : ""} ${dia ? "Toca un día en cualquiera de los dos gráficos para ver qué se ganó y qué se perdió ese día." : "Toca una semana para abrirla en toda la pestaña. Las semanas se muestran completas aunque el rango empiece o termine a mitad de semana."}</p>
     ${detalle}</section>`;
 }
 
@@ -1288,7 +1326,8 @@ async function armarPpt() {
     if (!window.JSZip) await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js");
     const zip = await JSZip.loadAsync(await (await fetch("plantilla_ppt.pptx")).arrayBuffer());
     const per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
-    const filtros = [st.can, st.cad, st.neg, st.cat, st.sku, st.sup, st.q && `“${st.q}”`].filter(Boolean);
+    const varios = (xs, plural) => xs.length > 2 ? `${xs.length} ${plural}` : xs.join(", ");
+    const filtros = [st.can, st.cad, st.neg, varios(st.cats, "categorías"), varios(st.skus, "SKU"), st.sup, st.q && `“${st.q}”`].filter(Boolean);
     const verTxt = VER_EX.find(v => v[0] === st.exVer)[1];
     const titulo = st.cad || "EXHIBICIONES GANADAS";
     const subtitulo = `${per}${filtros.length ? " · " + filtros.join(" · ") : ""}`;
@@ -1383,10 +1422,37 @@ function descargarEx(f) {
 }
 
 /* ---------- eventos ---------- */
+// Categoría / SKU con varias opciones: la lista sigue abierta mientras se marcan.
+function renderMulti(key) {
+  const ops = document.querySelector(`.multi[data-multi="${key}"] .multi-ops`), y = ops ? ops.scrollTop : 0;
+  st.multiAbierto = key; st.limit = 100; render();
+  const nuevo = document.querySelector(`.multi[data-multi="${key}"] .multi-ops`); if (nuevo) nuevo.scrollTop = y;
+  filtrarMulti(key);
+}
+document.addEventListener("change", ev => {
+  const key = ev.target.dataset?.multiv; if (!key) return;
+  const v = ev.target.value;
+  st[key] = ev.target.checked ? [...st[key], v] : st[key].filter(x => x !== v);
+  renderMulti(key);
+});
+document.addEventListener("input", ev => {
+  const key = ev.target.dataset?.multiq; if (!key) return;
+  st.multiQ[key] = ev.target.value; filtrarMulti(key);
+});
+document.addEventListener("click", ev => {
+  const x = ev.target.closest("[data-multix]");
+  if (x) { st[x.dataset.multix] = []; renderMulti(x.dataset.multix); return; }
+  // Abrir una lista cierra la otra; tocar fuera las cierra.
+  const s = ev.target.closest(".multi summary");
+  if (s) { ev.preventDefault(); const k = s.parentElement.dataset.multi; st.multiAbierto = st.multiAbierto === k ? "" : k;
+    for (const m of document.querySelectorAll(".multi")) m.open = m.dataset.multi === st.multiAbierto;
+    if (st.multiAbierto) { filtrarMulti(k); s.parentElement.querySelector("[data-multiq]")?.focus(); } return; }
+  if (st.multiAbierto && !ev.target.closest(".multi")) { st.multiAbierto = ""; for (const m of document.querySelectorAll(".multi")) m.open = false; }
+});
 document.addEventListener("change", ev => {
   const k = ev.target.dataset?.f; if (!k || k === "q") return;
   if (k === "dim") { st.dim = ev.target.value; st.abiertos.clear(); renderMain(D.formularios[st.tab]); return; }
-  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") st.cat = st.sku = ""; if (k === "cat") st.sku = ""; if (k === "can" || k === "zon") st.cad = ""; if (k === "can") st.zon = ""; }
+  if (k === "per") st.per[st.tab] = ev.target.value; else { st[k] = ev.target.value; if (k === "neg") { st.cat = st.sku = ""; st.cats = []; st.skus = []; } if (k === "cat") st.sku = ""; if (k === "can" || k === "zon") st.cad = ""; if (k === "can") st.zon = ""; }
   st.limit = 100; render();
 });
 let tq;
@@ -1395,9 +1461,10 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-exesc],[data-expt],[data-exrango],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-exesc],[data-exsinper],[data-expt],[data-exrango],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
   const d = t.dataset;
   if (d.exesc) { st.exEsc = d.exesc; st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
+  if (d.exsinper) { st.exSinPer = d.exsinper === "1"; st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
   if ("exrango" in d) { st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
   if (d.expt) { ocultarTip(); if (st.exEsc === "dia") { st.exDia = st.exDia === d.expt ? "" : d.expt; renderMain(D.formularios[st.tab]); } else { st.per.ex = d.expt; st.abiertos.clear(); st.limit = 100; render(); } return; }
   if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
@@ -1406,7 +1473,7 @@ document.addEventListener("click", ev => {
   if ("ppt" in d) { armarPpt(); return; }
   if (d.grp) { st.abiertos.has(d.grp) ? st.abiertos.delete(d.grp) : st.abiertos.add(d.grp); renderMain(D.formularios[st.tab]); return; }
   if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
-  if (d.f === "clear") { for (const k of FILTROS) st[k] = ""; render(); return; }
+  if (d.f === "clear") { for (const k of FILTROS) st[k] = ""; st.cats = []; st.skus = []; st.multiAbierto = ""; st.multiQ = {}; render(); return; }
   if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
   if ("mer" in d) { st.abiertos.has(d.mer) ? st.abiertos.delete(d.mer) : st.abiertos.add(d.mer); renderMain(D.formularios[st.tab]); return; }
   if (d.vista) { st.vista = d.vista; renderMain(D.formularios[st.tab]); return; }
