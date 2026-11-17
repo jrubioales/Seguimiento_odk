@@ -186,6 +186,7 @@ nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(-
 .g-ley i.g-gan, .g-ex .g-gan { background: var(--ok); fill: var(--ok); }
 .g-ley i.g-per, .g-ex .g-per { background: var(--falta); fill: var(--falta); }
 .g-ex .g-selb { fill: var(--accent-wash); }
+.g-ex .g-hueco { fill: var(--surface); }
 .g-fecha { background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px; padding: 5px 8px; }
 .g-dia { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); font-size: 14px; }
 #gTip { position: fixed; z-index: 50; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px; padding: 6px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12); display: none; }
@@ -312,7 +313,7 @@ const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
 const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", sku: "", q: "", vista: "zon", ver: "falta", dim: "cat",
-  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", exSinPer: false, cats: [], skus: [], multiAbierto: "", multiQ: {}, abiertos: new Set(), limit: 100 };
+  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", exModo: "act", cats: [], skus: [], multiAbierto: "", multiQ: {}, abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -979,11 +980,15 @@ function rangoEx(f) {
 
 function serieEx(f, rg) {
   // «Sin las perdidas»: solo las ganadas que hoy siguen activas (sin baja).
-  const rs = exFiltro(f).filter(r => !st.exSinPer || !r.baja);
+  const rs = exFiltro(f).filter(r => st.exModo !== "vig" || !r.baja);
   const medir = (ini, fin) => ({
     act: rs.filter(r => r.alta <= fin && !(r.baja && r.baja <= fin)).length,
     gan: rs.filter(r => r.alta >= ini && r.alta <= fin).length,
     per: rs.filter(r => r.baja && r.baja >= ini && r.baja <= fin).length,
+    // «Todas las ganadas»: acumuladas aunque luego se perdieran, y las del periodo según cómo están hoy.
+    acu: rs.filter(r => r.alta <= fin).length,
+    ganVig: rs.filter(r => r.alta >= ini && r.alta <= fin && !r.baja).length,
+    ganPer: rs.filter(r => r.alta >= ini && r.alta <= fin && r.baja).length,
   });
   if (st.exEsc === "dia") {
     const out = [];
@@ -1009,7 +1014,7 @@ function marcoEx(pts, W, H, maxV, R) {
   for (let v = 0; v <= tope; v += paso) svg += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g-grid"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" class="g-eje">${fmt(v)}</text>`;
   const cadaN = Math.max(1, Math.ceil(pts.length / Math.max(2, Math.floor(iw / 58))));
   pts.forEach((p, i) => { if ((pts.length - 1 - i) % cadaN === 0) svg += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" class="g-eje">${esc(p.eje)}</text>`; });
-  const toques = pts.map((p, i) => `<rect x="${x(i) - franja / 2}" y="${T}" width="${franja}" height="${ih + B}" fill="transparent" data-expt="${esc(p.id)}" data-tip="${esc(`${p.tit}|${p.act}|${p.gan}|${p.per}`)}" style="cursor:pointer"/>`).join("");
+  const toques = pts.map((p, i) => `<rect x="${x(i) - franja / 2}" y="${T}" width="${franja}" height="${ih + B}" fill="transparent" data-expt="${esc(p.id)}" data-tip="${esc(`${p.tit}|${p.act}|${p.gan}|${p.per}|${st.exModo}|${p.acu}|${p.ganVig}|${p.ganPer}`)}" style="cursor:pointer"/>`).join("");
   return { svg, toques, x, y, T, ih, franja };
 }
 
@@ -1021,6 +1026,7 @@ function barraEx(x, base, w, h, cls) {
 }
 
 function graficoEx(f) {
+  ocultarTip();
   const rg = rangoEx(f), dia = st.exEsc === "dia";
   const { rs, medir, pts } = serieEx(f, rg);
   const sel = dia ? st.exDia : st.per.ex;
@@ -1028,53 +1034,73 @@ function graficoEx(f) {
   const W = total >= 760 ? Math.floor((total - 20) / 2) : total, H = 240;
   const iSel = pts.findIndex(p => p.id === sel);
 
-  // Línea: activas al cierre.
-  const ml = marcoEx(pts, W, H, Math.max(0, ...pts.map(p => p.act)), 44);
+  const tot = st.exModo === "tot", vig = st.exModo === "vig", per = dia ? "día" : "semana";
+  // Línea: activas al cierre (o, en «Todas las ganadas», ganadas acumuladas).
+  const valor = p => tot ? p.acu : p.act;
+  const ml = marcoEx(pts, W, H, Math.max(0, ...pts.map(valor)), 44);
   let lin = ml.svg;
   if (iSel >= 0) lin += `<line x1="${ml.x(iSel)}" x2="${ml.x(iSel)}" y1="${ml.T}" y2="${ml.T + ml.ih}" class="g-sel"/>`;
-  lin += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${ml.x(i).toFixed(1)},${ml.y(p.act).toFixed(1)}`).join("")}" class="g-linea"/>`;
-  pts.forEach((p, i) => { if (ml.franja >= 14 || i === iSel || i === pts.length - 1) lin += `<circle cx="${ml.x(i)}" cy="${ml.y(p.act)}" r="${i === iSel ? 5 : 4}" class="g-punto${i === iSel ? " on" : ""}"/>`; });
-  if (pts.length) { const u = pts.length - 1; lin += `<text x="${ml.x(u) + 9}" y="${ml.y(pts[u].act) + 4}" class="g-val">${fmt(pts[u].act)}</text>`; }
+  lin += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${ml.x(i).toFixed(1)},${ml.y(valor(p)).toFixed(1)}`).join("")}" class="g-linea"/>`;
+  pts.forEach((p, i) => { if (ml.franja >= 14 || i === iSel || i === pts.length - 1) lin += `<circle cx="${ml.x(i)}" cy="${ml.y(valor(p))}" r="${i === iSel ? 5 : 4}" class="g-punto${i === iSel ? " on" : ""}"/>`; });
+  if (pts.length) { const u = pts.length - 1; lin += `<text x="${ml.x(u) + 9}" y="${ml.y(valor(pts[u])) + 4}" class="g-val">${fmt(valor(pts[u]))}</text>`; }
   lin += ml.toques;
 
-  // Barras: ganadas y perdidas lado a lado en cada periodo.
-  const mb = marcoEx(pts, W, H, Math.max(0, ...pts.map(p => Math.max(p.gan, p.per))), 14);
+  // Barras: ganadas y perdidas lado a lado; en «Todas las ganadas», una barra
+  // por periodo con las ganadas que siguen activas abajo y las que ya se perdieron arriba.
+  const mb = marcoEx(pts, W, H, Math.max(0, ...pts.map(p => tot ? p.gan : Math.max(p.gan, p.per))), 14);
   const bw = Math.max(2, Math.min(18, (mb.franja - 6) / 2)), base = mb.T + mb.ih;
   let bar = mb.svg;
   if (iSel >= 0) bar += `<rect x="${mb.x(iSel) - mb.franja / 2}" y="${mb.T}" width="${mb.franja}" height="${mb.ih}" class="g-selb"/>`;
   pts.forEach((p, i) => {
-    bar += barraEx(mb.x(i) - bw - 1, base, bw, base - mb.y(p.gan), "g-gan") + barraEx(mb.x(i) + 1, base, bw, base - mb.y(p.per), "g-per");
+    if (tot) {
+      const bw2 = Math.max(3, Math.min(28, mb.franja - 8)), x0 = mb.x(i) - bw2 / 2;
+      const hV = base - mb.y(p.ganVig), hP = base - mb.y(p.ganPer);
+      if (p.ganPer) bar += barraEx(x0, base, bw2, hV + hP, "g-per");
+      // La parte activa tapa la base de la perdida; 2px de separación entre ambas.
+      if (p.ganVig) bar += (p.ganPer ? `<rect x="${x0}" y="${base - hV - 2}" width="${bw2}" height="2" class="g-hueco"/>` : "") + (p.ganPer ? `<rect x="${x0}" y="${base - hV}" width="${bw2}" height="${hV}" class="g-gan"/>` : barraEx(x0, base, bw2, hV, "g-gan"));
+      if (i === iSel || i === pts.length - 1 || mb.franja >= 40) bar += `<text x="${mb.x(i)}" y="${base - hV - hP - 5}" text-anchor="middle" class="g-eje">${p.gan ? fmt(p.gan) : ""}</text>`;
+    } else {
+      bar += barraEx(mb.x(i) - bw - 1, base, bw, base - mb.y(p.gan), "g-gan") + barraEx(mb.x(i) + 1, base, bw, base - mb.y(p.per), "g-per");
+    }
   });
   bar += mb.toques;
 
   // Detalle: el día tocado o todo el rango.
   const ini = st.exDia || rg.desde, fin = st.exDia || rg.hasta, m = medir(ini, fin);
   const w = { ini, fin };
-  const lista = rs.filter(r => (r.alta >= ini && r.alta <= fin) || (r.baja && r.baja >= ini && r.baja <= fin))
+  const lista = rs.filter(r => (r.alta >= ini && r.alta <= fin) || (!tot && r.baja && r.baja >= ini && r.baja <= fin))
     .sort((a, b) => !!(a.baja && a.baja <= fin) - !!(b.baja && b.baja <= fin) || b.alta.localeCompare(a.alta) || a.loc.localeCompare(b.loc, "es"));
   const que = st.exDia ? `el ${fdate(st.exDia)}` : (rg.desde === rg.hasta ? `el ${fdate(rg.desde)}` : `del ${fdate(rg.desde)} al ${fdate(rg.hasta)}`);
+  const cifras = tot ? ` (<span class="cero">${fmt(m.ganVig)} siguen activas</span> · <span class="${m.ganPer ? "falta-n" : ""}">${fmt(m.ganPer)} ya perdidas</span>) · ${fmt(m.acu)} ganadas en total hasta ese cierre`
+    : vig ? " que siguen activas" : ` · <span class="${m.per ? "falta-n" : ""}">−${fmt(m.per)} perdidas</span> · ${fmt(m.act)} activas al cierre`;
   const detalle = `<div class="g-dia"><b>${st.exDia ? esc(fdate(st.exDia)) : rg.desde === rg.hasta ? esc(fdate(rg.desde)) : `Del ${esc(fdate(rg.desde))} al ${esc(fdate(rg.hasta))}`}</b> ·
-      <span class="cero">+${fmt(m.gan)} ganadas</span>${st.exSinPer ? " que siguen activas" : ` · <span class="${m.per ? "falta-n" : ""}">−${fmt(m.per)} perdidas</span> · ${fmt(m.act)} activas al cierre`}
+      <span class="cero">+${fmt(m.gan)} ganadas</span>${cifras}
       ${st.exDia ? ' · <button type="button" class="btn2" data-exrango style="padding:3px 9px;font-size:12px">Ver todo el rango</button>' : ""}</div>
-    ${lista.length ? `<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Ver ${lista.length === 1 ? "la exhibición ganada o perdida" : `las ${fmt(lista.length)} exhibiciones ${st.exSinPer ? "ganadas" : "ganadas o perdidas"}`} ${esc(que)}</summary><ul style="list-style:none;margin:0;padding:0">${lista.map(r => itemEx(r, w)).join("")}</ul></details>`
-      : `<p class="sub" style="margin:6px 0 0">No se ganó ni se perdió ninguna exhibición ${esc(que)}.</p>`}`;
+    ${lista.length ? `<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Ver ${lista.length === 1 ? "la exhibición" : `las ${fmt(lista.length)} exhibiciones`} ${tot || vig ? "ganadas" : "ganadas o perdidas"} ${esc(que)}</summary><ul style="list-style:none;margin:0;padding:0">${lista.map(r => itemEx(r, tot ? { ini, fin: D.hoy } : w)).join("")}</ul></details>`
+      : `<p class="sub" style="margin:6px 0 0">No se ganó ${tot || vig ? "" : "ni se perdió "}ninguna exhibición ${esc(que)}.</p>`}`;
 
   const fecha = (k, v, t) => `<label class="sub" style="display:flex;gap:6px;align-items:center">${t} <input type="date" data-ex${k} value="${v}" min="${rg.min}" max="${rg.max}" class="g-fecha"></label>`;
+  const modo = (k, t, ayuda) => `<button type="button" data-exmodo="${k}" aria-pressed="${st.exModo === k}" title="${ayuda}">${t}</button>`;
   const ctrl = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <div class="seg" role="group"><button type="button" data-exesc="sem" aria-pressed="${!dia}">Por semana</button><button type="button" data-exesc="dia" aria-pressed="${dia}">Por día</button></div>
-      <div class="seg" role="group" title="Sin las perdidas: cuenta solo las exhibiciones ganadas que hoy siguen activas"><button type="button" data-exsinper="0" aria-pressed="${!st.exSinPer}">Todas</button><button type="button" data-exsinper="1" aria-pressed="${st.exSinPer}">Sin las perdidas</button></div>
+      <div class="seg" role="group">${modo("act", "Activas", "Activas al cierre de cada periodo: las ganadas menos las que se perdieron")}${modo("tot", "Todas las ganadas", "Todas las ganadas en cada periodo, aunque después se hayan perdido")}${modo("vig", "Sin las perdidas", "Solo las ganadas que hoy siguen activas")}</div>
       ${fecha("desde", rg.desde, "Desde")}${fecha("hasta", rg.hasta, "Hasta")}</div>`;
   const vacio = '<p class="empty">No hay periodos en ese rango.</p>';
+  const tLin = tot ? "Ganadas acumuladas (incluye las que ya se perdieron)" : vig ? "Ganadas que siguen activas hoy, acumuladas" : `Activas al cierre de cada ${per}`;
+  const tBar = tot ? `Todas las ganadas en cada ${per}` : vig ? `Ganadas en cada ${per} que siguen activas` : `Ganadas y perdidas en cada ${per}`;
+  const ley = tot ? '<i class="g-gan"></i>Siguen activas <i class="g-per"></i>Ya perdidas' : vig ? '<i class="g-gan"></i>Ganadas' : '<i class="g-gan"></i>Ganadas <i class="g-per"></i>Perdidas';
+  const nota = tot ? ` Cuenta todas las exhibiciones ganadas en cada ${per}, aunque después se hayan perdido; la barra se parte en las que siguen activas hoy y las que ya se perdieron.`
+    : vig ? " Solo cuenta las exhibiciones ganadas que hoy siguen activas: las que ya se perdieron no aparecen en ninguna semana." : "";
   return `<section class="card">
     <div class="card-head"><h2>Evolución de exhibiciones ${dia ? "día a día" : "semana a semana"}</h2>${ctrl}</div>
     <div class="g-par">
-      <figure class="g-fig"><figcaption>${st.exSinPer ? "Ganadas que siguen activas hoy, acumuladas" : "Activas al cierre de cada " + (dia ? "día" : "semana")}</figcaption>
-        ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Exhibiciones activas">${lin}</svg>` : vacio}</figure>
-      <figure class="g-fig"><figcaption>${st.exSinPer ? "Ganadas en cada " + (dia ? "día" : "semana") + " que siguen activas" : "Ganadas y perdidas en cada " + (dia ? "día" : "semana")}
-        <span class="g-ley"><i class="g-gan"></i>Ganadas${st.exSinPer ? "" : ' <i class="g-per"></i>Perdidas'}</span></figcaption>
-        ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Exhibiciones ganadas y perdidas">${bar}</svg>` : vacio}</figure>
+      <figure class="g-fig"><figcaption>${tLin}</figcaption>
+        ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(tLin)}">${lin}</svg>` : vacio}</figure>
+      <figure class="g-fig"><figcaption>${tBar}
+        <span class="g-ley">${ley}</span></figcaption>
+        ${pts.length ? `<svg class="g-ex" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(tBar)}">${bar}</svg>` : vacio}</figure>
     </div>
-    <p class="sub" style="margin:6px 0 0">Con los filtros de arriba.${st.exSinPer ? " Solo cuenta las exhibiciones ganadas que hoy siguen activas: las que ya se perdieron no aparecen en ninguna semana." : ""} ${dia ? "Toca un día en cualquiera de los dos gráficos para ver qué se ganó y qué se perdió ese día." : "Toca una semana para abrirla en toda la pestaña. Las semanas se muestran completas aunque el rango empiece o termine a mitad de semana."}</p>
+    <p class="sub" style="margin:6px 0 0">Con los filtros de arriba.${nota} ${dia ? "Toca un día en cualquiera de los dos gráficos para ver su detalle." : "Toca una semana para abrirla en toda la pestaña. Las semanas se muestran completas aunque el rango empiece o termine a mitad de semana."}</p>
     ${detalle}</section>`;
 }
 
@@ -1461,10 +1487,10 @@ document.addEventListener("input", ev => {
   clearTimeout(tq); tq = setTimeout(() => { st.q = ev.target.value; st.limit = 100; renderMain(D.formularios[st.tab]); }, 200);
 });
 document.addEventListener("click", ev => {
-  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-exesc],[data-exsinper],[data-expt],[data-exrango],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
+  const t = ev.target.closest("[data-tab],[data-per],[data-mer],[data-grp],[data-vista],[data-ver],[data-exvista],[data-exver],[data-exesc],[data-exmodo],[data-expt],[data-exrango],[data-foto],[data-ppt],[data-more],[data-csv],[data-f='clear']"); if (!t) return;
   const d = t.dataset;
   if (d.exesc) { st.exEsc = d.exesc; st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
-  if (d.exsinper) { st.exSinPer = d.exsinper === "1"; st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
+  if (d.exmodo) { st.exModo = d.exmodo; st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
   if ("exrango" in d) { st.exDia = ""; renderMain(D.formularios[st.tab]); return; }
   if (d.expt) { ocultarTip(); if (st.exEsc === "dia") { st.exDia = st.exDia === d.expt ? "" : d.expt; renderMain(D.formularios[st.tab]); } else { st.per.ex = d.expt; st.abiertos.clear(); st.limit = 100; render(); } return; }
   if (d.exvista) { st.exVista = d.exvista; st.limit = 100; renderMain(D.formularios[st.tab]); return; }
@@ -1494,8 +1520,10 @@ document.addEventListener("mousemove", ev => {
   const r = ev.target.closest?.("[data-tip]");
   if (!r) return ocultarTip();
   let t = $("#gTip"); if (!t) { t = document.createElement("div"); t.id = "gTip"; document.body.appendChild(t); }
-  const [tit, act, gan, per] = r.dataset.tip.split("|");
-  t.innerHTML = `<b>${esc(tit)}</b><br>${fmt(+act)} activas · <span class="cero">+${fmt(+gan)}</span> ganadas · <span class="${+per ? "falta-n" : ""}">−${fmt(+per)}</span> perdidas`;
+  const [tit, act, gan, per, modo, acu, ganVig, ganPer] = r.dataset.tip.split("|");
+  t.innerHTML = modo === "tot"
+    ? `<b>${esc(tit)}</b><br><span class="cero">+${fmt(+gan)}</span> ganadas: ${fmt(+ganVig)} siguen activas · <span class="${+ganPer ? "falta-n" : ""}">${fmt(+ganPer)}</span> ya perdidas<br>${fmt(+acu)} ganadas en total hasta el cierre`
+    : `<b>${esc(tit)}</b><br>${fmt(+act)} activas · <span class="cero">+${fmt(+gan)}</span> ganadas${modo === "vig" ? "" : ` · <span class="${+per ? "falta-n" : ""}">−${fmt(+per)}</span> perdidas`}`;
   t.style.display = "block";
   const x = Math.min(ev.clientX + 14, innerWidth - t.offsetWidth - 8);
   t.style.left = x + "px"; t.style.top = (ev.clientY - t.offsetHeight - 12 < 0 ? ev.clientY + 16 : ev.clientY - t.offsetHeight - 12) + "px";
