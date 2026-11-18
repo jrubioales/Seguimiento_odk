@@ -397,7 +397,11 @@ def armar_visibilidad(odk: Odk, personal: Personal, hoy: date) -> dict:
         subio_local[r.get("local_id")][titulo(g(r, "__system/submitterName"))] += 1
 
     for u in universo:
+        # La lista trae mercaderista y supervisor del local (MAESTRA LOCALES);
+        # la cedula y quien lo subio quedan como respaldo.
         merc, sup = personal.de(u.get("acc_1", ""), u["llave"], u.get("acc_zona", ""))
+        merc = titulo(u.get("mercaderista")) or merc
+        sup = limpio(u.get("supervisor")) or sup
         if merc == "Sin asignar" and subio_local.get(u["llave"]):
             merc = subio_local[u["llave"]].most_common(1)[0][0]
         labels = [u.get(f"item_{k}_label") for k in range(1, 10) if u.get(f"item_{k}_label")]
@@ -1141,7 +1145,11 @@ def armar_exhibiciones(odk: Odk, personal: Personal, hoy: date, clave: str | Non
             skus.append(limpio(info.get("label") or (nombres[i] if i < len(nombres) else ean)))
             cats.append(categorias.get(info.get("categoria", ""), "SIN CATEGORÍA"))
         submitter = gano.get(u.get("name", "")) or ultimo_local.get(u.get("local_id", ""), "")
+        # A quien le toca el local segun la maestra; si la entidad no lo trae,
+        # quien gano la exhibicion.
         merc, sup = personal.de(cedula_de(submitter), u.get("local_id", ""), u.get("zona", ""))
+        merc = titulo(u.get("mercaderista")) or merc
+        sup = limpio(u.get("supervisor")) or sup
         if merc == "Sin asignar" and submitter:
             merc = titulo(submitter)
         filas.append({
