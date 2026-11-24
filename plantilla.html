@@ -114,17 +114,28 @@ header .sp { flex: 1; }
 #tokDlg p { font-size: 13px; color: var(--ink-2); margin: 0 0 12px; }
 #tokDlg input { width: 100%; background: var(--page); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
 #tokDlg .row { display: flex; gap: 8px; justify-content: flex-end; }
-#tokDlg .ok { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600; }
+.car-pasos .ok, .car-revision .ok, #tokDlg .ok { border: 0; background: var(--accent); color: #fff; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 600; }
 
 nav { display: flex; gap: 2px; border-bottom: 1px solid var(--grid); overflow-x: auto; scrollbar-width: none; }
 nav button { border: 0; background: none; padding: 10px 14px; cursor: pointer; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 500; }
 nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav .tab-act { margin-left: auto; color: var(--accent); }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 0 6px; }
 .filters select, .filters input { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 7px 9px; min-width: 0; }
 .filters .per { font-weight: 600; max-width: 340px; }
 .filters input { flex: 1 1 200px; }
 .filters .clear { border: 0; background: none; color: var(--accent); cursor: pointer; }
+.car-pasos { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 16px; }
+.car-pasos > li { padding-left: 4px; }
+.car-hojas { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.car-subir { display: inline-block; cursor: pointer; }
+.car-revision { margin-top: 12px; padding: 12px; border: 1px solid var(--ring); border-radius: 10px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.car-revision .ok[disabled] { opacity: .45; cursor: not-allowed; }
+.car-det summary { cursor: pointer; color: var(--accent); font-size: 13px; margin-top: 4px; }
+.car-det ul, .car-lista { margin: 6px 0 0; padding-left: 18px; font-size: 13px; max-height: 260px; overflow: auto; }
+.car-mal { color: var(--falta); }
+.car-ok { color: var(--ok-ink); }
 .multi { position: relative; }
 .multi summary { list-style: none; cursor: pointer; background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 7px 28px 7px 9px; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
 .multi summary::-webkit-details-marker { display: none; }
@@ -289,9 +300,9 @@ tr.open .caret { transform: rotate(90deg); }
   <dialog id="tokDlg">
     <form method="dialog" id="tokForm">
       <h2>Token de GitHub</h2>
-      <p>Para pedir la actualización hace falta el token <b>cron-seguimiento</b> (permiso Actions de Seguimiento_odk). Se guarda solo en este navegador.</p>
+      <p>Hace falta un token de GitHub del repositorio Seguimiento_odk con permiso <b>Actions</b> (para actualizar) y <b>Contents: Read and write</b> (para subir Excel). Se guarda solo en este navegador.</p>
       <input id="tokIn" type="password" placeholder="github_pat_…" autocomplete="off" required>
-      <div class="row"><button class="btn2" value="no" formnovalidate>Cancelar</button><button class="ok" value="si">Actualizar</button></div>
+      <div class="row"><button class="btn2" value="no" formnovalidate>Cancelar</button><button class="ok" value="si">Guardar</button></div>
     </form>
   </dialog>
   <dialog id="fotoDlg"><div class="caja">
@@ -362,6 +373,8 @@ function arrancar(datos) {
     const nuevo = actual === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = nuevo; store("seg-tema", nuevo);
   };
+  if (st.tab !== "act" && !D.formularios[st.tab]) st.tab = FORMS[0][0];
+  retomarCarga();
   render();
   reloj(); setInterval(reloj, 30000);
   setInterval(buscarNuevos, RECARGA_MIN * 60000);
@@ -501,7 +514,9 @@ function nombreLocal(f, r) { return `${esc(r.loc)}<div class="sub">${esc(f.key =
 
 /* ---------- render ---------- */
 function render() {
-  $("#tabs").innerHTML = FORMS.map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${st.tab === k}">${t}</button>`).join("");
+  $("#tabs").innerHTML = FORMS.map(([k, t]) => `<button role="tab" data-tab="${k}" aria-selected="${st.tab === k}">${t}</button>`).join("")
+    + `<button role="tab" data-tab="act" aria-selected="${st.tab === "act"}" class="tab-act">⬆ Cargar Excel</button>`;
+  if (st.tab === "act") return renderCargas();
   const f = D.formularios[st.tab];
   renderFiltros(f);
   renderMain(f);
@@ -1446,6 +1461,263 @@ function descargarEx(f) {
   }));
   bajar(lineas, `exhibiciones_ganadas_${st.per.ex}.csv`);
 }
+
+/* ---------- actualizar encuestas con Excel ---------- */
+// La página descarga lo que hay en ODK (editables.json, cifrado igual que los
+// datos), compara el Excel que se sube y lo guarda cifrado en el repositorio
+// (cargas/). El workflow «Aplicar cargas» lo aplica en ODK y deja el resultado.
+const CAR_ENC = [["pr", "Promociones"], ["ac", "Acuerdos comerciales"], ["vis", "Visibilidad"]];
+const CAR = { datos: null, cargando: false, error: "", enc: "pr", subido: null, envio: null };
+const CAR_AYUDA = {
+  Locales: "Un local por fila. Cambia mercaderista, supervisor, zona o nombre, o agrega locales nuevos al final. Si el mercaderista es nuevo, escribe su cédula en la última columna. Un local que quites del Excel no se borra de ODK.",
+  Promociones: "Una promoción por fila. Lo que quede en esta hoja (de hoy en adelante) es lo que verá la encuesta: agrega las nuevas, cambia descuentos o fechas y quita las que ya no van. El descuento puede ser 15% o un precio como «A 3,69». Las fechas van como 2026-12-01 o 01/12/2026.",
+  Acuerdos: "Una fila por local, acuerdo, mueble y producto. Para un acuerdo nuevo copia filas con el mismo nombre de acuerdo y fechas. Máximo 5 muebles por acuerdo. Lo que quites del Excel no se borra de ODK.",
+  Muebles: "Un mueble por fila. Si cambias algún mueble de un local, escribe todos los muebles de ese local (máximo 9): sus muebles en ODK se reemplazan por los del Excel. Los locales que no aparecen aquí quedan como están.",
+};
+const nk = s => norm(s).replace(/[^a-z0-9]+/g, " ").trim();
+const carFila = (r, cols) => cols.filter(c => !/nuevo$/i.test(c)).map(c => nk(r[c])).join("|");
+
+async function cargarEditables() {
+  if (CAR.datos || CAR.cargando) return;
+  CAR.cargando = true; CAR.error = "";
+  try {
+    const r = await fetch(`editables.json?t=${encodeURIComponent(D.actualizado)}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const c = await r.json();
+    CAR.datos = c.cifrado ? await descifrar(c.cifrado, CLAVE) : c.plano;
+  } catch (e) { CAR.error = "No se pudo cargar lo que hay en ODK. Revisa la conexión y vuelve a abrir esta pestaña."; }
+  CAR.cargando = false;
+  if (st.tab === "act") renderCargas();
+}
+
+function renderCargas() {
+  $("#filters").style.display = "none";
+  if (!CAR.datos) { cargarEditables(); }
+  const e = CAR.datos?.[CAR.enc];
+  const btn = (k, t) => `<button type="button" data-carenc="${k}" aria-pressed="${CAR.enc === k}">${t}</button>`;
+  let cuerpo;
+  if (CAR.error) cuerpo = `<p class="empty">${esc(CAR.error)}</p>`;
+  else if (!CAR.datos) cuerpo = '<p class="empty">Cargando lo que hay en ODK…</p>';
+  else if (!e) cuerpo = '<p class="empty">Esta encuesta no está disponible en este momento.</p>';
+  else {
+    const hojas = Object.keys(e.columnas);
+    cuerpo = `<ol class="car-pasos">
+      <li><b>Descarga el Excel</b> con lo que hay hoy en ODK.
+        <div style="margin-top:8px"><button class="ok" type="button" data-car="bajar">⬇ Descargar Excel de ${esc(e.titulo)}</button></div>
+        <ul class="car-hojas">${hojas.map(h => `<li><b>${esc(h)}</b> · ${fmt((e.hojas[h] || []).length)} filas<div class="sub">${esc(CAR_AYUDA[h] || "")}</div></li>`).join("")}</ul></li>
+      <li><b>Cámbialo</b> en Excel: edita filas o agrega nuevas. No cambies los nombres de las hojas ni de las columnas. Puedes subir solo la hoja que cambiaste.</li>
+      <li><b>Súbelo aquí</b> y revisa qué va a cambiar antes de enviarlo.
+        <div style="margin-top:8px"><label class="btn2 car-subir">⬆ Elegir Excel…<input type="file" accept=".xlsx,.xls" data-car="archivo" hidden></label></div>
+        ${revisionCarga(e)}</li>
+    </ol>`;
+  }
+  $("#main").innerHTML = `<section class="card">
+    <div class="card-head"><h2>Actualizar encuestas en ODK</h2><div class="seg" role="group">${CAR_ENC.map(([k, t]) => btn(k, t)).join("")}</div></div>
+    <p class="sub" style="margin:0 0 12px">Los cambios se aplican en ODK unos minutos después de enviarlos y los mercaderistas los ven al actualizar sus formularios. ODK guarda el historial de cada cambio.</p>
+    ${cuerpo}</section>${estadoEnvio()}`;
+  if (CAR.envio && CAR.envio.estado === "esperando" && !CAR.envio.mirando) mirarResultado();
+}
+
+// Qué trae el Excel subido comparado con lo que hay en ODK.
+function revisionCarga(e) {
+  const s = CAR.subido;
+  if (!s || s.enc !== CAR.enc) return "";
+  if (s.error) return `<p class="car-mal">${esc(s.error)}</p>`;
+  const partes = [];
+  let total = 0;
+  for (const [h, filas] of Object.entries(s.hojas)) {
+    const cols = e.columnas[h], viejas = e.hojas[h] || [];
+    const faltan = cols.filter(c => !/nuevo$/i.test(c) && !s.cols[h].some(x => nk(x) === nk(c)));
+    if (faltan.length) { partes.push(`<li class="car-mal"><b>${esc(h)}</b>: faltan las columnas ${esc(faltan.join(", "))}</li>`); s.mal = true; continue; }
+    if (h === "Locales") {
+      const antes = new Map(viejas.map(r => [r["Código"], r]));
+      const nuevos = [], cambios = [], sinCod = [];
+      filas.forEach((r, i) => {
+        if (!r["Código"]) { sinCod.push(i + 2); return; }
+        const a = antes.get(r["Código"]);
+        if (!a) { nuevos.push(r); return; }
+        const dif = cols.filter(c => !/nuevo$/i.test(c) && nk(r[c]) !== nk(a[c])).map(c => `${c}: ${a[c] || "(vacío)"} → ${r[c] || "(vacío)"}`);
+        if (dif.length) cambios.push(`${r["Código"]} · ${r["Local"] || a["Local"]} — ${dif.join(" · ")}`);
+      });
+      total += nuevos.length + cambios.length;
+      if (sinCod.length) s.mal = true;
+      partes.push(`<li><b>Locales</b>: ${fmt(nuevos.length)} nuevos · ${fmt(cambios.length)} con cambios · ${fmt(filas.length - nuevos.length - cambios.length - sinCod.length)} sin cambios
+        ${sinCod.length ? `<div class="car-mal">Filas sin código: ${sinCod.slice(0, 15).join(", ")}</div>` : ""}
+        ${listaCar([...nuevos.map(r => `Nuevo: ${r["Código"]} · ${r["Local"]} · ${r["Mercaderista"] || "sin mercaderista"}`), ...cambios])}</li>`);
+    } else {
+      const antes = new Map(), ahora = new Map();
+      for (const r of viejas) antes.set(carFila(r, cols), r);
+      for (const r of filas) ahora.set(carFila(r, cols), r);
+      const nuevas = [...ahora].filter(([k]) => !antes.has(k)).map(([, r]) => r);
+      const quitadas = [...antes].filter(([k]) => !ahora.has(k)).map(([, r]) => r);
+      const txt = r => cols.slice(0, 7).filter(c => !/nuevo$/i.test(c)).map(c => r[c]).filter(Boolean).join(" · ");
+      total += nuevas.length + quitadas.length;
+      const aviso = h === "Promociones" ? "Saldrán de la encuesta" : h === "Muebles" ? "Se quitan solo si el local tiene otros muebles en el Excel" : "No se borran de ODK";
+      partes.push(`<li><b>${esc(h)}</b>: ${fmt(nuevas.length)} filas nuevas o cambiadas · ${fmt(quitadas.length)} que ya no están · ${fmt(filas.length)} en total
+        ${listaCar(nuevas.map(r => "+ " + txt(r)))}
+        ${quitadas.length ? `<div class="sub" style="margin-top:6px">Ya no están (${aviso}):</div>${listaCar(quitadas.map(r => "− " + txt(r)))}` : ""}</li>`);
+    }
+  }
+  const listo = !s.mal && total > 0;
+  return `<div class="car-revision"><div><b>${esc(s.nombre)}</b> · hojas: ${esc(Object.keys(s.hojas).join(", ") || "ninguna reconocida")}</div>
+    <ul class="car-hojas">${partes.join("") || '<li class="car-mal">El Excel no tiene ninguna hoja de esta encuesta.</li>'}</ul>
+    ${total === 0 && !s.mal ? '<p class="sub">No hay nada distinto de lo que ya está en ODK.</p>' : ""}
+    <p class="sub">Esta es una revisión rápida; al enviarlo se valida todo de nuevo y, si algo está mal, no se aplica nada y te dice qué fila corregir.</p>
+    <button class="ok" type="button" data-car="enviar" ${listo && !(CAR.envio && ["subiendo", "esperando"].includes(CAR.envio.estado)) ? "" : "disabled"}>Enviar a ODK</button></div>`;
+}
+
+function listaCar(xs) {
+  if (!xs.length) return "";
+  return `<details class="car-det"><summary>Ver ${xs.length === 1 ? "el detalle" : `los ${fmt(xs.length)}`}</summary><ul>${xs.slice(0, 300).map(x => `<li>${esc(x)}</li>`).join("")}${xs.length > 300 ? `<li>… y ${fmt(xs.length - 300)} más</li>` : ""}</ul></details>`;
+}
+
+function estadoEnvio() {
+  const v = CAR.envio;
+  if (!v) return "";
+  const r = v.resultado;
+  let txt;
+  if (v.estado === "subiendo") txt = "Subiendo el Excel…";
+  else if (v.estado === "esperando") txt = `Enviado. GitHub lo está aplicando en ODK (2 a 4 minutos)… <span class="sub">${esc(v.nombre || "")}</span>`;
+  else if (v.estado === "error") txt = `<span class="car-mal">${esc(v.msg)}</span>`;
+  else if (r) {
+    const conteo = Object.entries(r.conteo || {}).map(([k, n]) => `${fmt(n)} ${k}`).join(" · ");
+    txt = r.aplicado
+      ? `<b class="car-ok">✓ Aplicado en ODK</b> ${conteo ? "· " + esc(conteo) : "· no había nada que cambiar"}`
+      : `<b class="car-mal">No se aplicó${(r.fallas || []).length ? " completo" : ""}</b>`;
+    const errs = [...(r.errores || []), ...(r.fallas || [])];
+    if (errs.length) txt += `<ul class="car-lista">${errs.slice(0, 60).map(x => `<li>${esc(x)}</li>`).join("")}${errs.length > 60 ? `<li>… y ${errs.length - 60} más</li>` : ""}</ul>`;
+    if ((r.avisos || []).length) txt += `<ul class="car-lista sub">${r.avisos.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    if (r.aplicado) txt += '<p class="sub">La página se actualiza sola en unos minutos con los datos nuevos.</p>';
+  }
+  return `<section class="card"><div class="card-head"><h2>Último envío</h2>${v.estado === "listo" || v.estado === "error" ? '<button class="btn2" type="button" data-car="cerrar">Cerrar</button>' : ""}</div>${txt}</section>`;
+}
+
+const XLSX_URL = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+
+async function bajarExcel() {
+  const e = CAR.datos[CAR.enc];
+  if (!window.XLSX) await cargarScript(XLSX_URL);
+  const wb = XLSX.utils.book_new();
+  const lee = [["Cómo usar este Excel"], [""], ...Object.keys(e.columnas).map(h => [`${h}: ${CAR_AYUDA[h] || ""}`]),
+    [""], ["Descargado el " + new Date().toLocaleString("es-EC") + " con los datos de ODK de " + new Date(D.actualizado).toLocaleString("es-EC")],
+    ["Súbelo en la pestaña «Cargar Excel» de la página de seguimiento."]];
+  const wl = XLSX.utils.aoa_to_sheet(lee); wl["!cols"] = [{ wch: 140 }];
+  XLSX.utils.book_append_sheet(wb, wl, "Léeme");
+  for (const [h, cols] of Object.entries(e.columnas)) {
+    const filas = e.hojas[h] || [];
+    const ws = XLSX.utils.json_to_sheet(filas.map(r => Object.fromEntries(cols.map(c => [c, r[c] ?? ""]))), { header: cols });
+    ws["!cols"] = cols.map(c => ({ wch: Math.min(45, Math.max(c.length + 2, ...filas.slice(0, 400).map(r => String(r[c] ?? "").length + 1))) }));
+    ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: cols.length - 1 } }) };
+    XLSX.utils.book_append_sheet(wb, ws, h);
+  }
+  XLSX.writeFile(wb, `${e.titulo} ODK ${D.hoy}.xlsx`);
+}
+
+const celda = v => v instanceof Date
+  ? (d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`)(new Date(v.getTime() + 12 * 3600e3))
+  : typeof v === "number" ? String(Number.isInteger(v) ? v : +v.toFixed(6)) : String(v ?? "").trim();
+
+async function leerExcel(archivo) {
+  const e = CAR.datos[CAR.enc];
+  CAR.subido = { enc: CAR.enc, nombre: archivo.name, hojas: {}, cols: {} };
+  try {
+    if (!window.XLSX) await cargarScript(XLSX_URL);
+    const wb = XLSX.read(await archivo.arrayBuffer(), { cellDates: true });
+    for (const h of Object.keys(e.columnas)) {
+      const nombre = wb.SheetNames.find(n => nk(n) === nk(h));
+      if (!nombre) continue;
+      const crudas = XLSX.utils.sheet_to_json(wb.Sheets[nombre], { defval: "", raw: true });
+      const cols = (XLSX.utils.sheet_to_json(wb.Sheets[nombre], { header: 1 })[0] || []).map(String);
+      CAR.subido.cols[h] = cols;
+      CAR.subido.hojas[h] = crudas.map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k.trim(), celda(v)])))
+        .filter(r => Object.values(r).some(Boolean))
+        .map(r => Object.fromEntries(e.columnas[h].map(c => [c, r[Object.keys(r).find(k => nk(k) === nk(c))] ?? ""])));
+    }
+  } catch (err) { CAR.subido.error = "No se pudo leer el archivo. ¿Es un Excel (.xlsx)?"; }
+  renderCargas();
+}
+
+async function cifrarTexto(texto, clave) {
+  const sal = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), it = 250000;
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(clave), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: sal, iterations: it, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+  const datos = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(texto)));
+  return { sal: b64(sal), iv: b64(iv), it, datos: b64(datos) };
+}
+function b64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); }
+
+async function enviarCarga() {
+  if (!GH) { CAR.envio = { estado: "error", msg: "Enviar solo funciona en la página publicada en GitHub." }; return renderCargas(); }
+  let tok = store("seg-gh-token");
+  if (!tok) { tok = await pedirToken(); if (!tok) return; }
+  const s = CAR.subido, ahora = new Date();
+  const id = `${ahora.toISOString().slice(0, 19).replace(/[-:T]/g, "")}-${s.enc}-${Math.random().toString(36).slice(2, 7)}`;
+  CAR.envio = { estado: "subiendo", id, enc: s.enc, nombre: s.nombre };
+  renderCargas();
+  try {
+    const carga = { encuesta: s.enc, hojas: s.hojas, archivo: s.nombre, base: D.actualizado, creado: ahora.toISOString() };
+    const texto = JSON.stringify(carga);
+    const sobre = CLAVE ? { cifrado: await cifrarTexto(texto, CLAVE) } : { plano: carga };
+    const r = await fetch(`https://api.github.com/repos/${GH.repo}/contents/cargas/${id}.json`, {
+      method: "PUT", headers: { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({ message: `Carga de ${CAR_ENC.find(x => x[0] === s.enc)[1]} desde la página`, content: b64(new TextEncoder().encode(JSON.stringify(sobre))), branch: "main" }),
+    });
+    if (r.status === 201 || r.status === 200) {
+      store("seg-gh-token", tok);
+      CAR.envio.estado = "esperando"; CAR.envio.desde = Date.now();
+      store("seg-carga", JSON.stringify(CAR.envio));
+    } else if ([401, 403, 404].includes(r.status)) {
+      try { localStorage.removeItem("seg-gh-token"); } catch (e) {}
+      CAR.envio = { estado: "error", msg: "El token no sirve para subir: necesita el permiso «Contents: Read and write» del repositorio Seguimiento_odk. Pega uno nuevo y vuelve a enviar." };
+    } else CAR.envio = { estado: "error", msg: `GitHub respondió ${r.status}. Intenta de nuevo.` };
+  } catch (e) { CAR.envio = { estado: "error", msg: "Sin conexión con GitHub. Intenta de nuevo." }; }
+  renderCargas();
+}
+
+// Revisa cada 15 s si ya está cargas/<id>.resultado.json.
+async function mirarResultado() {
+  const v = CAR.envio; v.mirando = true;
+  const tok = store("seg-gh-token");
+  while (CAR.envio === v && v.estado === "esperando") {
+    if (Date.now() - v.desde > 20 * 60000) { v.estado = "error"; v.msg = "Pasaron 20 minutos sin respuesta. Revisa en GitHub → Actions → «Aplicar cargas de Excel»."; break; }
+    try {
+      const r = await fetch(`https://api.github.com/repos/${GH.repo}/contents/cargas/${v.id}.resultado.json?t=${Date.now()}`,
+        { headers: tok ? { Authorization: `Bearer ${tok}`, Accept: "application/vnd.github+json" } : {}, cache: "no-store" });
+      if (r.ok) {
+        const j = await r.json();
+        const sobre = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\s/g, "")), c => c.charCodeAt(0))));
+        v.resultado = sobre.cifrado ? await descifrar(sobre.cifrado, CLAVE) : sobre.plano;
+        v.estado = "listo";
+        if (v.resultado.aplicado) CAR.datos = null;   // lo de ODK cambió: se vuelve a descargar
+        break;
+      }
+    } catch (e) { /* se reintenta */ }
+    await new Promise(ok => setTimeout(ok, 15000));
+  }
+  v.mirando = false;
+  store("seg-carga", JSON.stringify(v));
+  if (st.tab === "act") renderCargas();
+}
+
+function retomarCarga() {
+  try {
+    const v = JSON.parse(store("seg-carga") || "null");
+    if (v && (v.estado === "esperando" || v.estado === "listo")) { CAR.envio = { ...v, mirando: false }; CAR.enc = v.enc || CAR.enc; }
+  } catch (e) {}
+}
+
+document.addEventListener("click", ev => {
+  const t = ev.target.closest("[data-carenc],[data-car]"); if (!t) return;
+  if (t.dataset.carenc) { CAR.enc = t.dataset.carenc; return renderCargas(); }
+  const a = t.dataset.car;
+  if (a === "bajar") { t.disabled = true; bajarExcel().catch(() => alert("No se pudo armar el Excel (¿sin conexión?).")).finally(() => { t.disabled = false; }); }
+  else if (a === "enviar") enviarCarga();
+  else if (a === "cerrar") { CAR.envio = null; try { localStorage.removeItem("seg-carga"); } catch (e) {} renderCargas(); }
+});
+document.addEventListener("change", ev => {
+  if (ev.target.dataset?.car !== "archivo" || !ev.target.files[0]) return;
+  leerExcel(ev.target.files[0]);
+});
 
 /* ---------- eventos ---------- */
 // Categoría / SKU con varias opciones: la lista sigue abierta mientras se marcan.
