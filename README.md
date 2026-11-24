@@ -80,40 +80,6 @@ semana, perdidas o todas).
 El universo sale de las mismas listas que usan los formularios, así que cuando
 se actualiza una lista en ODK la página se ajusta sola en la siguiente corrida.
 
-### Cargar Excel (actualizar Promociones, Acuerdos y Visibilidad)
-
-La pestaña **⬆ Cargar Excel** deja cambiar esas tres encuestas sin entrar a
-ODK: se descarga un Excel con lo que hay hoy, se edita y se sube. Antes de
-enviarlo la página muestra qué cambia (locales nuevos o cambiados, filas
-nuevas o que ya no están).
-
-| Encuesta | Hojas | Qué se puede hacer |
-|---|---|---|
-| Promociones | Locales, Promociones | Locales nuevos y su asignación; **reemplazar** las promociones vigentes (las de hoy en adelante salen solo del Excel) |
-| Acuerdos comerciales | Locales, Acuerdos | Asignación de locales; acuerdos nuevos o cambiados (fechas, muebles, productos) |
-| Visibilidad | Locales, Muebles | Locales nuevos y su asignación; reemplazar los muebles de un local |
-
-* Nunca se borra nada de ODK: un local, acuerdo o mueble que se quita del
-  Excel queda como está. Solo las promociones se reemplazan completas.
-* El mercaderista se escribe por nombre; la cédula se busca en las listas de
-  ODK. Para uno nuevo se escribe en «Cédula mercaderista nuevo». El Excel que
-  se descarga no trae cédulas.
-* Cómo funciona: la página sube el Excel **cifrado** con la clave de la página
-  a `cargas/<id>.json` (con el token de GitHub del navegador, que necesita
-  permiso *Contents: Read and write* además de *Actions*). El workflow
-  **Aplicar cargas de Excel** ([`cargas_odk.py`](cargas_odk.py)) lo valida
-  todo de nuevo: si una fila está mal no aplica nada y devuelve qué corregir;
-  si está bien crea o cambia las entidades en ODK (y en Promociones publica
-  una versión nueva del formulario con `promociones_items.csv` y
-  `promociones_tramos.csv` regenerados), deja `cargas/<id>.resultado.json`
-  y refresca la página. Si el formulario de Promociones tiene un borrador
-  abierto en ODK, no lo toca y avisa.
-* Lo descargable sale de `docs/editables.json` (cifrado), que arma el build.
-* Probar sin escribir en ODK:
-  `python cargas_odk.py exportar --env ... --salida x.json` y
-  `python cargas_odk.py probar --env ... --encuesta ac --json x.json`
-  (con lo exportado sin cambios debe dar 0 operaciones).
-
 ## Estados
 
 | Estado | Significa |

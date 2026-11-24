@@ -1266,20 +1266,6 @@ def main() -> None:
     (salida.parent / "version.json").write_text(json.dumps({"actualizado": datos["actualizado"]}), encoding="utf-8")
     shutil.copyfile(PLANTILLA_PPT, salida.parent / PLANTILLA_PPT.name)
 
-    # Lo que la pestaña «Actualizar encuestas» ofrece para descargar en Excel
-    # (aparte, para no hacer más pesada la página; se baja solo al abrirla).
-    try:
-        import cargas_odk
-        odk_c = cargas_odk.Odk(odk.base, odk.proyecto, email, password)
-        editables = cargas_odk.exportar(odk_c, hoy)
-        texto_e = json.dumps(editables, ensure_ascii=False, separators=(",", ":"))
-        (salida.parent / "editables.json").write_text(
-            json.dumps({"cifrado": cifrar(texto_e, clave)} if clave else {"plano": editables}, ensure_ascii=False),
-            encoding="utf-8")
-        print("Editables:", {k: {h: len(v) for h, v in e["hojas"].items()} for k, e in editables.items()})
-    except Exception as e:
-        print(f"Aviso: no se generó editables.json ({str(e)[:200]})")
-
     for clave_f, f in datos["formularios"].items():
         if clave_f == "ex":
             activas = sum(1 for x in f["filas"] if not x["baja"])
