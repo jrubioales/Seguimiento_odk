@@ -313,7 +313,7 @@ const RECARGA_MIN = 2;  // cada cuantos minutos se revisa si hay datos nuevos
 let D = null;
 let CLAVE = "";  // la de la página; también abre las fotos
 const st = { tab: "ac", per: {}, acu: "", sup: "", can: "", zon: "", cad: "", neg: "", cat: "", sku: "", q: "", vista: "zon", ver: "falta", dim: "cat",
-  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", exModo: "act", cats: [], skus: [], multiAbierto: "", multiQ: {}, abiertos: new Set(), limit: 100 };
+  exVista: "res", exVer: "act", exEsc: "sem", exDia: "", exDesde: "", exHasta: "", exModo: "act", cads: [], cats: [], skus: [], multiAbierto: "", multiQ: {}, abiertos: new Set(), limit: 100 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -542,23 +542,25 @@ function renderFiltros(f) {
   if (ex) st.skus = st.skus.filter(v => skusDisp.includes(v));
   // Cadena depende de zona y del canal/plan elegidos.
   const paraCad = base.filter(r => (!st.can || r.can === st.can) && (!st.zon || r.zon === st.zon));
+  const cadsDisp = uniq(paraCad, "cad");
+  if (ex) { st.cad = ""; st.cads = st.cads.filter(v => cadsDisp.includes(v)); }
   const negs = uniq(base, "neg");
   $("#filters").innerHTML = `
     ${f.key === "ac" ? `<select data-f="acu" aria-label="Acuerdo">${opt(uniq(base, "acu"), st.acu, "Todos los acuerdos")}</select>` : ""}
     ${ex || f.can_titulo ? `<select data-f="can" aria-label="Canal">${opt(uniq(base, "can"), st.can, f.can_titulo || "Todos los canales")}</select>` : ""}
     ${ex ? "" : `<select data-f="zon" aria-label="Zona">${opt(uniq(base.filter(r => !st.can || r.can === st.can), "zon"), st.zon, "Todas las zonas")}</select>`}
-    <select data-f="cad" aria-label="Cadena o cliente">${opt(uniq(paraCad, "cad"), st.cad, ex ? "Todas las cadenas" : "Todas las cadenas / clientes")}</select>
+    ${ex ? multiSel("cads", cadsDisp, "Todas las cadenas", "cadenas") : `<select data-f="cad" aria-label="Cadena o cliente">${opt(cadsDisp, st.cad, "Todas las cadenas / clientes")}</select>`}
     <select data-f="sup" aria-label="Supervisor">${opt(uniq(base, "sup"), st.sup, "Todos los supervisores")}</select>
     ${negs.length ? `<select data-f="neg" aria-label="Negocio">${opt(negs, st.neg, "Todos los negocios")}</select>
     ${ex ? multiSel("cats", catsDisp, "Todas las categorías", "categorías") : `<select data-f="cat" aria-label="Categoría">${opt(catsDisp, st.cat, "Todas las categorías")}</select>`}` : ""}
     ${ex ? multiSel("skus", skusDisp, "Todos los SKU", "SKU") : ""}
     <input type="search" data-f="q" placeholder="Buscar local, mercaderista…" value="${esc(st.q)}">
-    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.sku || st.q || (ex && (st.cats.length || st.skus.length)) ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
+    ${st.acu || st.can || st.zon || st.cad || st.sup || st.neg || st.cat || st.sku || st.q || (ex && (st.cads.length || st.cats.length || st.skus.length)) ? '<button class="clear" data-f="clear" type="button">Limpiar</button>' : ""}`;
 }
 
 // Filas del periodo sin los filtros de persona/negocio (para llenar las listas).
 const FILTROS = ["acu", "can", "zon", "cad", "sup", "neg", "cat", "sku", "q"];
-function filasBase(f) { const g = { cats: st.cats, skus: st.skus }; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } st.cats = []; st.skus = []; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
+function filasBase(f) { const g = { cads: st.cads, cats: st.cats, skus: st.skus }; for (const k of FILTROS) { g[k] = st[k]; st[k] = ""; } st.cads = []; st.cats = []; st.skus = []; const rs = filasPeriodo(f); Object.assign(st, g); return rs; }
 
 // Lista desplegable con casillas para elegir varios valores (st[key] es un arreglo).
 function multiSel(key, lista, todos, plural) {
@@ -894,7 +896,7 @@ function semanaEx(per) {
 
 function exFiltro(f) {
   const q = norm(st.q).trim();
-  return f.filas.filter(r => (!st.can || r.can === st.can) && (!st.cad || r.cad === st.cad) && (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
+  return f.filas.filter(r => (!st.can || r.can === st.can) && (!st.cads.length || st.cads.includes(r.cad)) && (!st.sup || r.sup === st.sup) && (!st.neg || r.neg.includes(st.neg)) &&
     (!st.cats.length || r.cat.some(c => st.cats.includes(c))) && (!st.skus.length || (r.skus || []).some(s => st.skus.includes(s))) && (!q || r._q.includes(q)));
 }
 
@@ -1353,15 +1355,16 @@ async function armarPpt() {
     const zip = await JSZip.loadAsync(await (await fetch("plantilla_ppt.pptx")).arrayBuffer());
     const per = f.periodos.find(p => p.id === st.per.ex)?.label || "";
     const varios = (xs, plural) => xs.length > 2 ? `${xs.length} ${plural}` : xs.join(", ");
-    const filtros = [st.can, st.cad, st.neg, varios(st.cats, "categorías"), varios(st.skus, "SKU"), st.sup, st.q && `“${st.q}”`].filter(Boolean);
+    const filtros = [st.can, st.cads.length > 1 && varios(st.cads, "cadenas"), st.neg, varios(st.cats, "categorías"), varios(st.skus, "SKU"), st.sup, st.q && `“${st.q}”`].filter(Boolean);
     const verTxt = VER_EX.find(v => v[0] === st.exVer)[1];
-    const titulo = st.cad || "EXHIBICIONES GANADAS";
+    const unaCad = st.cads.length === 1 ? st.cads[0] : "";
+    const titulo = unaCad || "EXHIBICIONES GANADAS";
     const subtitulo = `${per}${filtros.length ? " · " + filtros.join(" · ") : ""}`;
 
     // Portada del formato con nuestro título.
     let portada = await zip.file("ppt/slides/slide1.xml").async("string");
     portada = portada.replace(/<a:t>ATIMASA S\.A\.<\/a:t>/, `<a:t>${xml(titulo.toUpperCase())}</a:t>`)
-      .replace(/<a:t>REVESIMIENTO SUPERIOR<\/a:t>/, `<a:t>${xml(`${st.cad ? "Exhibiciones ganadas" : "Todas las cadenas"} · ${verTxt}`)}</a:t>`)
+      .replace(/<a:t>REVESIMIENTO SUPERIOR<\/a:t>/, `<a:t>${xml(`${unaCad ? "Exhibiciones ganadas" : st.cads.length ? varios(st.cads, "cadenas") : "Todas las cadenas"} · ${verTxt}`)}</a:t>`)
       .replace("</a:p></p:txBody></p:sp></p:spTree>", `</a:p><a:p><a:pPr algn="ctr"/>${run(subtitulo, 1600, "FFDEDC")}</a:p></p:txBody></p:sp></p:spTree>`);
     zip.file("ppt/slides/slide1.xml", portada);
 
@@ -1499,7 +1502,7 @@ document.addEventListener("click", ev => {
   if ("ppt" in d) { armarPpt(); return; }
   if (d.grp) { st.abiertos.has(d.grp) ? st.abiertos.delete(d.grp) : st.abiertos.add(d.grp); renderMain(D.formularios[st.tab]); return; }
   if (d.tab) { st.tab = d.tab; st.abiertos.clear(); st.limit = 100; render(); return; }
-  if (d.f === "clear") { for (const k of FILTROS) st[k] = ""; st.cats = []; st.skus = []; st.multiAbierto = ""; st.multiQ = {}; render(); return; }
+  if (d.f === "clear") { for (const k of FILTROS) st[k] = ""; st.cads = []; st.cats = []; st.skus = []; st.multiAbierto = ""; st.multiQ = {}; render(); return; }
   if (d.per) { st.per[st.tab] = d.per; st.abiertos.clear(); st.limit = 100; render(); return; }
   if ("mer" in d) { st.abiertos.has(d.mer) ? st.abiertos.delete(d.mer) : st.abiertos.add(d.mer); renderMain(D.formularios[st.tab]); return; }
   if (d.vista) { st.vista = d.vista; renderMain(D.formularios[st.tab]); return; }
